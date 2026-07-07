@@ -1,4 +1,5 @@
 import os
+from tqdm import tqdm
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models
@@ -15,7 +16,8 @@ model_save_filepath = os.path.join(results_dir, 'nilm_cnn_model_2month.keras')
 T_limit = 86400 # Two Months
 train_test_val_split = [0.7, 0.15, 0.15]
 window_length, stride = 30, 1
-epochs = 50
+# epochs = 50
+epochs = 10
 batch_size = 32
 target_appliances = ['DWE']
 
@@ -185,7 +187,7 @@ def train_model(data, idx_dict, window_length, epochs, batch_size, model_filepat
     patience = 5
     patience_counter = 0
 
-    for epoch in range(epochs):
+    for epoch in tqdm(range(epochs), desc="Epochs"):
 
         # Training
         train_loss = 0.0
@@ -196,7 +198,7 @@ def train_model(data, idx_dict, window_length, epochs, batch_size, model_filepat
         train_inp = train_inp[perm]
         train_out = train_out[perm]
 
-        for i in range(0, len(train_inp), batch_size):
+        for i in tqdm(range(0, len(train_inp), batch_size), desc="Training", leave=False):
             batch_inp = train_inp[i:i + batch_size]
             batch_out = train_out[i:i + batch_size]
             (S, S_fft), y = generate_batch(x_data, y_data, batch_inp, batch_out, window_length)
@@ -211,7 +213,7 @@ def train_model(data, idx_dict, window_length, epochs, batch_size, model_filepat
         val_loss = 0.0
         num_val_batches = 0
 
-        for i in range(0, len(val_inp), batch_size):
+        for i in tqdm(range(0, len(val_inp), batch_size), desc="Validation", leave=False):
             batch_inp = val_inp[i:i + batch_size]
             batch_out = val_out[i:i + batch_size]
             (S, S_fft), y = generate_batch(x_data, y_data, batch_inp, batch_out, window_length)
