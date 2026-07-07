@@ -17,7 +17,7 @@ T_limit = 86400 # Two Months
 train_test_val_split = [0.7, 0.15, 0.15]
 window_length, stride = 30, 1
 # epochs = 50
-epochs = 10
+epochs = 1
 batch_size = 32
 target_appliances = ['DWE']
 
@@ -307,67 +307,89 @@ def test_model(model_filepath, data, test_idx, window_length, batch_size, scalin
 
 # Characteristics that correlate with disaggregation performance:
 # Duty Cycle, Mean Power when On, State Separability, Power Variability, Sparsity, Switching Frequency, Energy Contribution
-def nilm_difficulty_score(power):
-    # on_threshold : Power above which appliance is considered ON
-    # Score: 0 = very difficult, 1 = very easy
+def nilm_difficulty_score(app_power):
+    app_power = np.asarray(app_power).squeeze()
 
-    nonzero = power[power > 0]
+    # Handle All-Zero Profiles
+    nonzero = app_power[app_power > 0]
+    if nonzero.size == 0: return 0.0, None
+
+    # Determine ON Threshold
     on_threshold = np.percentile(nonzero, 10)
-
-    power = np.asarray(power)
-    on = power > on_threshold
+    on = app_power > on_threshold
     duty_cycle = np.mean(on)
 
     if np.any(on):
-        on_power = power[on]
+        on_power = app_power[on]
         mean_on_power = np.mean(on_power)
         cv_on = np.std(on_power) / (mean_on_power + 1e-6)
     else:
         mean_on_power = 0
         cv_on = 1
 
-    # Number of Switching Events
+    # Number of ON/OFF transitions
     transitions = np.sum(np.abs(np.diff(on.astype(int))))
+    switch_rate = transitions / len(app_power)
 
-    # Normalize Each Feature
+    # Feature Scores
     power_score = np.clip(mean_on_power / 1500, 0, 1)
 
     # Best around 20% duty cycle
-    duty_score = 1 - abs(duty_cycle - 0.2) / 0.2
-    duty_score = np.clip(duty_score, 0, 1)
+    duty_score = np.clip(1 - abs(duty_cycle - 0.2) / 0.2, 0, 1)
+
+    # Lower variance while ON is better
     stability_score = np.exp(-cv_on)
 
-    # Penalize excessive switching
-    switch_rate = transitions / len(power)
-    switch_score = np.exp(-50 * switch_rate)
+    # Reward a moderate amount of switching.
+    # Zero switching and extremely frequent switching are both undesirable.
+    optimal_switch_rate = 0.005
+    switch_score = np.exp(-((switch_rate - optimal_switch_rate) / optimal_switch_rate) ** 2)
 
     score = (
-            0.35 * power_score +
+            0.30 * power_score +
             0.25 * stability_score +
             0.20 * duty_score +
-            0.20 * switch_score
+            0.25 * switch_score
     )
 
     features = {
+        "on_threshold": on_threshold,
         "mean_on_power": mean_on_power,
         "duty_cycle": duty_cycle,
         "cv_on": cv_on,
         "transitions": transitions,
+        "switch_rate": switch_rate,
         "score": score
     }
 
     return score, features
 
+def select_target_appliances(n):
+    scores = []
+    for appliance in appliance_names:
+        data = load_data(
+            ampds_filepath,
+            T_limit=T_limit,
+            target_appliances=[appliance])
+        score, features = nilm_difficulty_score(data['y'])
+        scores.append((score, appliance))
+    scores.sort(reverse=True)
+    target_appliances = [appliance for score, appliance in scores[:n]]
+    return target_appliances
+
 if __name__ == '__main__':
+
+    data = load_data(ampds_filepath, T_limit=T_limit)
+    appliance_names = data["appliance_names"]
+
+    target_appliances = select_target_appliances(n=3)
+    # target_appliances = ['EBE', 'RSE', 'FRE']
 
     # Train One Model per Appliance
     for appliance in target_appliances:
 
         # Load Data for This Appliance Only
         data = load_data(ampds_filepath, T_limit=T_limit, target_appliances=[appliance])
-
-        # Predict Appliance Disaggregation Accuracy
-        score, features = nilm_difficulty_score(data['y'])
 
         # Precompute Train/Validation/Test Splits
         idx_dict = precompute_indices(
@@ -380,16 +402,16 @@ if __name__ == '__main__':
         model_filepath = os.path.join(results_dir, f"nilm_cnn_{appliance}.keras")
 
         # Train
-        # print(f"\n{'=' * 80}")
-        # print(f"Training model for: {appliance}")
-        # print(f"{'=' * 80}")
-        # train_model(
-        #     data=data,
-        #     idx_dict=idx_dict,
-        #     window_length=window_length,
-        #     epochs=epochs,
-        #     batch_size=batch_size,
-        #     model_filepath=model_filepath)
+        print(f"\n{'=' * 80}")
+        print(f"Training model for: {appliance}")
+        print(f"{'=' * 80}")
+        train_model(
+            data=data,
+            idx_dict=idx_dict,
+            window_length=window_length,
+            epochs=epochs,
+            batch_size=batch_size,
+            model_filepath=model_filepath)
 
         # Test
         print("\nStarting Testing...")
