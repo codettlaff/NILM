@@ -16,8 +16,8 @@ model_save_filepath = os.path.join(results_dir, 'nilm_cnn_model_2month.keras')
 T_limit = 86400 # Two Months
 train_test_val_split = [0.7, 0.15, 0.15]
 window_length, stride = 30, 1
-# epochs = 50
-epochs = 1
+epochs = 20
+# epochs = 1
 batch_size = 32
 target_appliances = ['DWE']
 
@@ -382,10 +382,16 @@ if __name__ == '__main__':
     data = load_data(ampds_filepath, T_limit=T_limit)
     appliance_names = data["appliance_names"]
 
-    target_appliances = select_target_appliances(n=3)
+    #target_appliances = select_target_appliances(n=3)
     # target_appliances = ['EBE', 'RSE', 'FRE']
+    # EBE: 0.39
+    # RSE: 0.99
+    # FRE: 0.079058
+    # Scoring function doesn't do a good job predicting the best EACC
+    target_appliances = appliance_names
 
     # Train One Model per Appliance
+    results = {}
     for appliance in target_appliances:
 
         # Load Data for This Appliance Only
@@ -415,7 +421,7 @@ if __name__ == '__main__':
 
         # Test
         print("\nStarting Testing...")
-        test_model(
+        results[appliance] = test_model(
             model_filepath=model_filepath,
             data=data,
             test_idx=idx_dict['test'],
