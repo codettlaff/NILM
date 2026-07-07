@@ -305,6 +305,56 @@ def test_model(model_filepath, data, test_idx, window_length, batch_size, scalin
         "y_pred": y_pred_denorm,
     }
 
+# Characteristics that correlate with disaggregation performance:
+# Duty Cycle, Mean Power when On, State Separability, Power Variability, Sparsity, Switching Frequency, Energy Contribution
+def nilm_difficulty_score(power, on_threshold=10):
+    # on_threshold : Power above which appliance is considered ON
+    # Score: 0 = very difficult, 1 = very easy
+
+    power = np.asarray(power)
+    on = power > on_threshold
+    duty_cycle = np.mean(on)
+
+    if np.any(on):
+        on_power = power[on]
+        mean_on_power = np.mean(on_power)
+        cv_on = np.std(on_power) / (mean_on_power + 1e-6)
+    else:
+        mean_on_power = 0
+        cv_on = 1
+
+    # Number of Switching Events
+    transitions = np.sum(np.abs(np.diff(on.astype(int))))
+
+    # Normalize Each Feature
+    power_score = np.clip(mean_on_power / 1500, 0, 1)
+
+    # Best around 20% duty cycle
+    duty_score = 1 - abs(duty_cycle - 0.2) / 0.2
+    duty_score = np.clip(duty_score, 0, 1)
+    stability_score = np.exp(-cv_on)
+
+    # Penalize excessive switching
+    switch_rate = transitions / len(power)
+    switch_score = np.exp(-50 * switch_rate)
+
+    score = (
+            0.35 * power_score +
+            0.25 * stability_score +
+            0.20 * duty_score +
+            0.20 * switch_score
+    )
+
+    features = {
+        "mean_on_power": mean_on_power,
+        "duty_cycle": duty_cycle,
+        "cv_on": cv_on,
+        "transitions": transitions,
+        "score": score
+    }
+
+    return score, features
+
 if __name__ == '__main__':
 
     # Train One Model per Appliance
