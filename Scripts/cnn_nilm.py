@@ -5,10 +5,10 @@ from tensorflow.keras import layers, models
 from tensorflow.keras.models import load_model
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' # Hide Warnings
 
-base_dir = os.path.join(os.path.dirname(__file__), '..', '..')
-data_dir = os.path.join(base_dir, 'data')
-results_dir = os.path.join(base_dir, 'experiments')
-ampds_filepath = os.path.join(data_dir, 'ampds', 'ampds2.npz')
+base_dir = os.path.join(os.path.dirname(__file__), '..')
+data_dir = os.path.join(base_dir, 'Data')
+results_dir = os.path.join(base_dir, 'Results')
+ampds_filepath = os.path.join(data_dir, 'ampds2.npz')
 model_save_filepath = os.path.join(results_dir, 'nilm_cnn_model_2month.keras')
 
 # T_limit = 10000
