@@ -307,9 +307,12 @@ def test_model(model_filepath, data, test_idx, window_length, batch_size, scalin
 
 # Characteristics that correlate with disaggregation performance:
 # Duty Cycle, Mean Power when On, State Separability, Power Variability, Sparsity, Switching Frequency, Energy Contribution
-def nilm_difficulty_score(power, on_threshold=10):
+def nilm_difficulty_score(power):
     # on_threshold : Power above which appliance is considered ON
     # Score: 0 = very difficult, 1 = very easy
+
+    nonzero = power[power > 0]
+    on_threshold = np.percentile(nonzero, 10)
 
     power = np.asarray(power)
     on = power > on_threshold
@@ -359,12 +362,12 @@ if __name__ == '__main__':
 
     # Train One Model per Appliance
     for appliance in target_appliances:
-        print(f"\n{'=' * 80}")
-        print(f"Training model for: {appliance}")
-        print(f"{'=' * 80}")
 
         # Load Data for This Appliance Only
         data = load_data(ampds_filepath, T_limit=T_limit, target_appliances=[appliance])
+
+        # Predict Appliance Disaggregation Accuracy
+        score, features = nilm_difficulty_score(data['y'])
 
         # Precompute Train/Validation/Test Splits
         idx_dict = precompute_indices(
@@ -377,14 +380,16 @@ if __name__ == '__main__':
         model_filepath = os.path.join(results_dir, f"nilm_cnn_{appliance}.keras")
 
         # Train
-        print("\nStarting Training...")
-        train_model(
-            data=data,
-            idx_dict=idx_dict,
-            window_length=window_length,
-            epochs=epochs,
-            batch_size=batch_size,
-            model_filepath=model_filepath)
+        # print(f"\n{'=' * 80}")
+        # print(f"Training model for: {appliance}")
+        # print(f"{'=' * 80}")
+        # train_model(
+        #     data=data,
+        #     idx_dict=idx_dict,
+        #     window_length=window_length,
+        #     epochs=epochs,
+        #     batch_size=batch_size,
+        #     model_filepath=model_filepath)
 
         # Test
         print("\nStarting Testing...")
@@ -394,4 +399,5 @@ if __name__ == '__main__':
             test_idx=idx_dict['test'],
             window_length=window_length,
             batch_size=batch_size,
-            scaling_factors=data['scaling_factors'])
+            scaling_factors=data['scaling_factors'],
+            show=True)
