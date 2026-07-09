@@ -411,13 +411,13 @@ if __name__ == '__main__':
         print(f"\n{'=' * 80}")
         print(f"Training model for: {appliance}")
         print(f"{'=' * 80}")
-        train_model(
-            data=data,
-            idx_dict=idx_dict,
-            window_length=window_length,
-            epochs=epochs,
-            batch_size=batch_size,
-            model_filepath=model_filepath)
+        # train_model(
+        #     data=data,
+        #     idx_dict=idx_dict,
+        #     window_length=window_length,
+        #     epochs=epochs,
+        #     batch_size=batch_size,
+        #     model_filepath=model_filepath)
 
         # Test
         print("\nStarting Testing...")
