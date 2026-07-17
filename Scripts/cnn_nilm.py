@@ -165,45 +165,6 @@ def precompute_indices(num_timesteps, window_length, stride, train_val_test_spli
         
     return idx_dict
 
-def precompute_indices_old(num_timesteps, window_length, stride, train_val_test_split, seed=42):
-    # Shuffles and Splits without actually making windows.
-
-    num_windows = (num_timesteps - window_length + 1) // stride + 1
-    inp_idx = np.arange(0, num_windows * stride, stride)
-
-    center_offset = window_length // 2
-    out_idx = inp_idx + center_offset
-
-    # Avoid overflow at edges.
-    valid_mask = out_idx < num_timesteps
-    inp_idx = inp_idx[valid_mask]
-    out_idx = out_idx[valid_mask]
-
-    # Shuffle indices
-    rng = np.random.default_rng(seed)
-    perm = rng.permutation(len(inp_idx))
-    inp_idx = inp_idx[perm]
-    out_idx = out_idx[perm]
-
-    # Split
-    n = len(inp_idx)
-    n_train = int(train_val_test_split[0] * n)
-    n_val = int(train_val_test_split[1] * n)
-
-    train_inp = inp_idx[:n_train]
-    train_out = out_idx[:n_train]
-
-    val_inp = inp_idx[n_train:n_train + n_val]
-    val_out = out_idx[n_train:n_train + n_val]
-
-    test_inp = inp_idx[n_train + n_val:]
-    test_out = out_idx[n_train + n_val:]
-
-    return {
-        'train': (train_inp, train_out),
-        'val': (val_inp, val_out),
-        'test': (test_inp, test_out)}
-
 def process_window(x_win):
     x_win = tf.convert_to_tensor(x_win, dtype=tf.float32)
     p, q = x_win[:, 0], x_win[:, 1]
