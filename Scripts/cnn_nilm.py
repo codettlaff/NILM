@@ -28,6 +28,12 @@ epochs = 20
 batch_size = 32
 target_appliances = ['DWE']
 
+# Remaining Changes to make:
+# Generate_batch() repeatedly computes PQ and FFT for same windows every communication round.
+# want to generate and save S, S_fft, targets ahead of time.
+
+# want to split training and testing data first, then save scaling factors
+
 def load_data(ampds_filepath, T_limit, target_appliances=None):
 
     data = np.load(ampds_filepath)
@@ -146,18 +152,18 @@ def precompute_indices(num_timesteps, window_length, stride, train_val_test_spli
             split[block_labels[i]][0].append(inp) # Add to train, val, or test
             split[block_labels[i]][1].append(out)
         
-        # Recombine windows from multiple blocks belonging to the same split.
-        # Randomly shuffle windows within each split.
-        idx_dict = {}
-        for label in ['train', 'val', 'test']:
-            if split[label][0]:
-                inp = np.concatenate(split[label][0])
-                out = np.concatenate(split[label][1])
-                perm = rng.permutation(len(inp))
-                idx_dict[label] = (inp[perm], out[perm])
-            else: idx_dict['label'] = (np.array([], dtype=int), np.array([], dtype=int))
-            
-        return idx_dict
+    # Recombine windows from multiple blocks belonging to the same split.
+    # Randomly shuffle windows within each split.
+    idx_dict = {}
+    for label in ['train', 'val', 'test']:
+        if split[label][0]:
+            inp = np.concatenate(split[label][0])
+            out = np.concatenate(split[label][1])
+            perm = rng.permutation(len(inp))
+            idx_dict[label] = (inp[perm], out[perm])
+        else: idx_dict['label'] = (np.array([], dtype=int), np.array([], dtype=int))
+        
+    return idx_dict
 
 def precompute_indices_old(num_timesteps, window_length, stride, train_val_test_split, seed=42):
     # Shuffles and Splits without actually making windows.
@@ -506,13 +512,13 @@ if __name__ == '__main__':
         print(f"\n{'=' * 80}")
         print(f"Training model for: {appliance}")
         print(f"{'=' * 80}")
-        # train_model(
-        #     data=data,
-        #     idx_dict=idx_dict,
-        #     window_length=window_length,
-        #     epochs=epochs,
-        #     batch_size=batch_size,
-        #     model_filepath=model_filepath)
+        train_model(
+            data=data,
+            idx_dict=idx_dict,
+            window_length=window_length,
+            epochs=epochs,
+            batch_size=batch_size,
+            model_filepath=model_filepath)
 
         # Test
         print("\nStarting Testing...")
