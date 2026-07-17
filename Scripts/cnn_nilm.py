@@ -162,6 +162,25 @@ def normalize_data(data, idx_dict):
     return data_normalized
 
 def process_window(x_win):
+    x_win = np.asarray(x_win, dtype=np.float32)
+    p, q = x_win[:, 0], x_win[:, 1]
+    
+    # Build PQ Signature
+    p_col = p[:, np.newaxis] # (W, 1)
+    q_row = q[np.newaxis, :] # (1, W)
+    S_xy = np.sqrt(p_col**2, q_row**2, dtype=np.float32)
+    top = np.concatenate([np.zeros((1,1), dtype=np.float32), q_row], axis=1)
+    left = np.concatenate([p_col, S_xy], axis=1)
+    S = np.concatenate([top, left], axis=0)
+    S = S[..., np.newaxis] # (W+1, W+1, 1)
+    
+    # Build FFT
+    S_fft = np.abs(np.fft.fft2(S[:, :, 0])).astype(np.float32)
+    S_fft = S_fft[..., np.newaxis]
+    
+    return S, S_fft
+
+def process_window_old(x_win):
     x_win = tf.convert_to_tensor(x_win, dtype=tf.float32)
     p, q = x_win[:, 0], x_win[:, 1]
 
@@ -225,46 +244,6 @@ def prepare_data(data, idx_dict, window_length, save_filepath):
 # Converts every window to a TensorFlow tensors individually
 # Best to rewrite process_window using pure Numpy instead of TensorFlow
 # Could make preprocessing 2-5x faster and use less memory.
-
-# normalizes data
-# does generate sample for all idx in idx_dict
-# Saves and returns dict of {x: (S,FFT), y: target, x_min, x_max, y_min, y_max}
-# saves as npz
-# saves separate file for training, testing, and validation data
-def prepare_data_old(data, idx_dict, save_filepath):
-    
-    # Normalize using training statistics
-    data = normalize_data(data, idx_dict)
-    x_data = data['X']
-    y_data = data['Y']
-    scaling = {
-        'x_min': data['x_min'],
-        'x_max': data['x_max'],
-        'y_min': data['y_min'],
-        'y_max': data['y_max']}
-    
-    for split in ['train', 'val', 'test']:
-        inp_idx, out_idx = idx_dict[split]
-        
-        S_list = []
-        FFT_list = []
-        y_list = []
-        
-        for i_inp, i_out in zip(inp_idx, out_idx):
-            sample = generate_sample(x_data, y_data, i_inp, i_out, window_length)
-            if sample is None: continue
-            (S, S_fft), y = sample
-            S_list.append(S.numpy())
-            FFT_list.append(S_fft.numpy())
-            y_list.append(y)
-            
-        S = np.asarray(S_list, dtype=np.float32)
-        FFT = np.asarray(FFT_list, dtype=np.float32)
-        Y = np.asarray(y_list, dtype=np.float32)
-        np.savez(f"{save_filepath}_{split}.npz", S=S, FFT=FFT, Y=Y, **scaling)
-        
-# Datasets are large
-# Better to preallocate arrays using the known number of windows len(inp_idx) and fill in place
         
 def get_sample(processed_data, idx):
     pass
