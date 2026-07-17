@@ -239,25 +239,75 @@ def prepare_data(data, idx_dict, window_length, save_filepath):
             Y[j] = y
             
         np.save(f"{save_filepath}_{split}.npz", S=S, FFT=FFT, Y=Y, **scaling)
-        
-# Reminaing bottleneck is generate_sample()
-# Converts every window to a TensorFlow tensors individually
-# Best to rewrite process_window using pure Numpy instead of TensorFlow
-# Could make preprocessing 2-5x faster and use less memory.
-        
-def get_sample(processed_data, idx):
-    pass
 
-# Data is only loaded for a short time when batch is being fetched.
-# Saves memory.
-def generate_batch(processed_data_filepath, idx_list):
-    pass
+def generate_batch(processed_data, idx_list):
+    S_batch = processed_data['S'][idx_list]
+    FFT_batch = processed_data['FFT'][idx_list]
+    Y_batch = processed_data['Y'][idx_list]
+    return (S_batch, FFT_batch), Y_batch
 
 def build_model():
-    pass
+    
+    def build_branch(input_layer):
+        x = layers.Conv2D(30, (10, 10), activation='relu')(input_layer)
+        x = layers.Conv2D(30, (8, 8), activation='relu')(x)
+        x = layers.Conv2D(40, (6, 6), activation='relu')(x)
+        x = layers.Conv2D(50, (5, 5), activation='relu')(x)
+        x = layers.Conv2D(50, (5, 5), activation='relu')(x)
+        x = layers.Flatten()(x)
+        return x
+    
+    # Inputs
+    inp_time = layers.Input(shape=(31, 31, 1))
+    inp_freq = layers.Input(shape=(31, 31, 1))
 
-def train_model(model, processed_data_filepath, processed_data_idx_dict, epochs, batch_size, model_filepath):
-    pass
+    # Branches
+    branch_time = build_branch(inp_time)
+    branch_freq = build_branch(inp_freq)
+    x = layers.Concatenate()([branch_time, branch_freq])
+
+    # Dense + Output
+    x = layers.Dense(1024, activation='relu')(x)
+    out = layers.Dense(1)(x)
+
+    # Model
+    model = models.Model(inputs=[inp_time, inp_freq], outputs=out)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss='mse') 
+    return model
+
+def train_model(model, processed_training_data, processed_val_data, epochs, batch_size, model_filepath):
+    
+    best_val_loss = np.inf
+    patience = 5
+    patience_counter = 0
+    
+    n_train = len(processed_training_data['Y'])
+    n_val = len(processed_val_data['Y'])
+    
+    for epoch in tqdm(range(epochs), desc="Epochs"):
+        
+        # Training
+        train_loss = 0.0
+        num_train_batches = 0
+        
+        perm = np.random.permutation(n_train)
+        for i in tqdm(range(0, n_train, batch_size), desc="Training", leave=False):
+            
+            batch_idx = perm[i:i + batch_size]
+            (S, FFT), Y = generate_batch(processed_training_data, batch_idx)
+            loss = model.train_on_batch([S, FFT], Y)
+            train_loss += loss
+            num_train_batches += 1
+            
+        train_loss /= num_train_batches
+        
+    # Validation
+    val_loss /= num_val_batches
+    print(
+            f"Epoch {epoch + 1}/{epochs} "
+            f"- train_loss: {train_loss:.4f} "
+            f"- val_loss: {val_loss:.4f}")
+    
 
 def test_model(model_filepath, processed_data_filepath, processed_data_idx_dict, batch_size, scaling_factors, show=False):
     pass
