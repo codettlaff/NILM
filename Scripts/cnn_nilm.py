@@ -301,16 +301,103 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
             
         train_loss /= num_train_batches
         
-    # Validation
-    val_loss /= num_val_batches
-    print(
+        # Validation
+        val_loss = 0.0
+        num_val_batches = 0
+        
+        for i in tqdm(range(0, n_val, batch_size), desc='Validation', leave=False):
+            batch_idx = np.arrange(i, min(i + batch_size, n_val))
+            (S, FFT), Y = generate_batch(processed_val_data, batch_idx)
+            loss = model.test_on_batch([S, FFT], Y)
+            val_loss += loss
+            num_val_batches += 1
+        val_loss /= num_val_batches
+        print(
             f"Epoch {epoch + 1}/{epochs} "
             f"- train_loss: {train_loss:.4f} "
             f"- val_loss: {val_loss:.4f}")
+        
+        # Early Stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            model.save(model_filepath)
+        else: 
+            patience_counter += 1
+            if patience_counter >= patience:
+                print("Early Stopping")
+                break
+            
+        model.save(model_filepath)
     
+def test_model(model_filepath, processed_data_filepath, batch_size, show=False):
+    
+    model = load_model(model_filepath)
+    processed_data = np.load(processed_data_filepath)
+    
+    y_min = processed_data['y_min']
+    y_max = processed_data['y_max']
+    n_samples = len(processed_data['Y'])
+    
+    y_true_all = []
+    y_pred_all = []
+    
+    # Inference Loop
+    for i in range(0, n_samples, batch_size):
+        batch_idx = np.arange(i, min(i + batch_size, n_samples))
+        (S, FFT), y_true = generate_batch(processed_data, batch_idx)
+        y_pred = model.predict_on_batch([S, FFT])
+        y_true_all.append(y_true)
+        y_pred_all.append(y_pred) 
+        
+    # Concatenate Batches
+    y_true = np.vstack(y_true_all)
+    y_pred = np.vstack(y_pred_all)
+    
+    # Metrics in Normalized Units
+    mse_norm = np.mean((y_pred - y_true) ** 2)
+    rmse_norm = np.sqrt(mse_norm)
+    
+    # Convert back to Watts
+    y_true_denorm = y_true * (y_max - y_min) + y_min
+    y_pred_denorm = y_pred * (y_max - y_min) + y_min
 
-def test_model(model_filepath, processed_data_filepath, processed_data_idx_dict, batch_size, scaling_factors, show=False):
-    pass
+    mse_denorm = np.mean((y_pred_denorm - y_true_denorm) ** 2)
+    rmse_denorm = np.sqrt(mse_denorm)
+
+    abs_error = np.abs(y_pred_denorm - y_true_denorm)
+    mae = np.mean(abs_error)
+
+    avg_true = np.mean(y_true_denorm)
+
+    eacc = 1.0 - (
+        np.sum(abs_error) /
+        (2.0 * np.sum(y_true_denorm)))
+    
+    # Display Results
+    if show:
+        print("\nResults")
+        print("=" * 80)
+        print(f"{'Metric':<20}{'Value':>15}")
+        print("-" * 80)
+        print(f"{'Normalized MSE':<20}{mse_norm:>15.6f}")
+        print(f"{'Normalized RMSE':<20}{rmse_norm:>15.6f}")
+        print(f"{'MSE (Watts)':<20}{mse_denorm:>15.6f}")
+        print(f"{'RMSE (Watts)':<20}{rmse_denorm:>15.6f}")
+        print(f"{'MAE (Watts)':<20}{mae:>15.6f}")
+        print(f"{'Average Load':<20}{avg_true:>15.6f}")
+        print(f"{'EACC':<20}{eacc:>15.6f}")
+        print("=" * 80)
+        
+    return {
+        "mse_norm": mse_norm,
+        "rmse_norm": rmse_norm,
+        "mse_denorm": mse_denorm,
+        "rmse_denorm": rmse_denorm,
+        "mae": mae,
+        "eacc": eacc,
+        "y_true": y_true_denorm,
+        "y_pred": y_pred_denorm}
 
 if __name__ == '__main__':
     pass
