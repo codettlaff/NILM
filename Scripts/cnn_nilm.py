@@ -28,6 +28,12 @@ epochs = 20
 batch_size = 32
 target_appliances = ['DWE']
 
+# To Add:
+# Instead of just scaling factors, save metadata.
+# Attatch metadata to both pre-processed data and trained model.
+# Do timing and computational requirement analysis (Aim for Lightweight Code).
+# Save these results in trained model metadata.
+
 def load_data(ampds_filepath, T_limit):
     
     data = np.load(ampds_filepath)
@@ -48,12 +54,13 @@ def load_data(ampds_filepath, T_limit):
 
 def filter_by_appliances(data, target_appliances):
     
+    target_data = data.copy()
     appliance_names = data['appliance_names']
     indices = [i for i, name in enumerate(appliance_names) if name in target_appliances]
     appliance_names = appliance_names[indices]
-    data['appliance_names'] = appliance_names
-    data['Y'] = data['Y'][:,indices]
-    return data
+    target_data['appliance_names'] = appliance_names
+    target_data['Y'] = target_data['Y'][:,indices]
+    return target_data
 
 def precompute_indices(num_timesteps, window_length, stride, train_val_test_split, number_blocks, seed=42):
     
@@ -250,6 +257,7 @@ def prepare_data(data, idx_dict, window_length, save_filepath):
             'FFT': os.path.join(split_dir, "FFT.npy"),
             'Y': os.path.join(split_dir, "Y.npy"),
             'scaling': os.path.join(split_dir, "scaling.npz")}
+        
         np.save(filepaths_dict['S'], S)
         np.save(filepaths_dict['FFT'], FFT)
         np.save(filepaths_dict['Y'], Y)
@@ -259,16 +267,19 @@ def prepare_data(data, idx_dict, window_length, save_filepath):
     return filepaths
 
 def load_processed_data(processed_data_filepaths_dict):
-    
-    scaling_factors = np.load(processed_data_filepaths_dict['scaling'])
-    S = np.load(processed_data_filepaths_dict['S'], mmap_mode='r')
-    FFT = np.load(processed_data_filepaths_dict['FFT'], mmap_mode='r')
-    Y = np.load(processed_data_filepaths_dict['Y'], mmap_mode='r')
+
+    with np.load(processed_data_filepaths_dict["scaling"]) as scaling:
+        scaling_factors = {
+            "x_min": scaling["x_min"],
+            "x_max": scaling["x_max"],
+            "y_min": scaling["y_min"],
+            "y_max": scaling["y_max"]}
+
     return {
-        'S': S,
-        'FFT': FFT,
-        'Y': Y,
-        'scaling_factors': scaling_factors}
+        "S": np.load(processed_data_filepaths_dict["S"], mmap_mode="r"),
+        "FFT": np.load(processed_data_filepaths_dict["FFT"], mmap_mode="r"),
+        "Y": np.load(processed_data_filepaths_dict["Y"], mmap_mode="r"),
+        "scaling_factors": scaling_factors}
 
 def generate_batch(processed_data, idx_list):
     S_batch = processed_data['S'][idx_list]
@@ -444,7 +455,6 @@ if __name__ == '__main__':
         os.makedirs(processed_data_filepath, exist_ok=True)
         processed_data_filepaths = {}
         for target_appliance in data["appliance_names"]:
-            
             target_data = filter_by_appliances(data, [target_appliance])
             target_data_folderpath = os.path.join(processed_data_filepath, target_appliance)
             os.makedirs(target_data_folderpath, exist_ok=True)
@@ -452,7 +462,7 @@ if __name__ == '__main__':
             filepaths_dict = prepare_data(target_data, idx_dict, window_length, target_data_filepath)
             processed_data_filepaths[target_appliance] = filepaths_dict
         with open(processed_data_filepaths_dict_save_filepath, "wb") as f: pickle.dump(processed_data_filepaths, f)
-    # preprocess_data(ampds_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath)
+    preprocess_data(ampds_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath)
     
     # Load Preproccessed Data Filepaths Dict
     with open(processed_data_filepaths_dict_save_filepath, "rb") as f: processed_data_filepaths = pickle.load(f)
@@ -474,24 +484,21 @@ if __name__ == '__main__':
         model = build_model()
         
         # Train
-        print(f"\n{'=' * 80}")
-        print(f"Training model for: {target_appliance}")
-        print(f"{'=' * 80}")
-        train_model(
-            model=model,
-            processed_training_data=processed_training_data,
-            processed_val_data=processed_val_data,
-            epochs=epochs,
-            batch_size=batch_size,
-            model_filepath=model_filepath)
+        # print(f"\n{'=' * 80}")
+        # print(f"Training model for: {target_appliance}")
+        # print(f"{'=' * 80}")
+        # train_model(
+        #     model=model,
+        #     processed_training_data=processed_training_data,
+        #     processed_val_data=processed_val_data,
+        #     epochs=epochs,
+        #     batch_size=batch_size,
+        #     model_filepath=model_filepath)
         
         # Test
         print("\nStarting Testing...")
         results[target_appliance] = test_model(
             model_filepath=model_filepath,
-            data=data,
-            test_idx=idx_dict['test'],
-            window_length=window_length,
+            processed_testing_data=processed_test_data,
             batch_size=batch_size,
-            scaling_factors=data['scaling_factors'],
             show=True)
