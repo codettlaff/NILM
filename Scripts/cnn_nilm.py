@@ -8,6 +8,7 @@ Created on Fri Jul 17 11:07:59 2026
 import os
 from tqdm import tqdm
 import numpy as np
+import pickle
 import tensorflow as tf
 from tensorflow.keras import layers, models
 from tensorflow.keras.models import load_model
@@ -42,7 +43,7 @@ def load_data(ampds_filepath, T_limit):
     return {
         'X': X,
         'Y': Y,
-        'T': T,
+        'T': T_limit,
         'appliance_names': appliance_names}
 
 def filter_by_appliances(data, target_appliances):
@@ -50,7 +51,9 @@ def filter_by_appliances(data, target_appliances):
     appliance_names = data['appliance_names']
     indices = [i for i, name in enumerate(appliance_names) if name in target_appliances]
     appliance_names = appliance_names[indices]
+    data['appliance_names'] = appliance_names
     data['Y'] = data['Y'][:,indices]
+    return data
 
 def precompute_indices(num_timesteps, window_length, stride, train_val_test_split, number_blocks, seed=42):
     
@@ -156,10 +159,12 @@ def normalize_data(data, idx_dict):
     data_normalized['X'] = (data['X'] - x_min) / x_range
     data_normalized['Y'] = (data['Y'] - y_min) / y_range
     
-    data_normalized['x_min'] = x_min
-    data_normalized['x_max'] = x_max
-    data_normalized['y_min'] = y_min
-    data_normalized['y_max'] = y_max
+    scaling_factors = {
+        'x_min': x_min,
+        'x_max': x_max,
+        'y_min': y_min,
+        'y_max': y_max}
+    data_normalized['scaling_factors'] = scaling_factors
     
     return data_normalized
 
@@ -170,7 +175,7 @@ def process_window(x_win):
     # Build PQ Signature
     p_col = p[:, np.newaxis] # (W, 1)
     q_row = q[np.newaxis, :] # (1, W)
-    S_xy = np.sqrt(p_col**2, q_row**2, dtype=np.float32)
+    S_xy = np.sqrt(p_col**2 + q_row**2, dtype=np.float32) # This line causing bug
     top = np.concatenate([np.zeros((1,1), dtype=np.float32), q_row], axis=1)
     left = np.concatenate([p_col, S_xy], axis=1)
     S = np.concatenate([top, left], axis=0)
@@ -205,7 +210,7 @@ def generate_sample(x_data, y_data, i_inp, i_out, window_length):
 
     x_window = x_data[i_inp : i_inp + window_length] # (W,2)
     if x_window.shape[0] != window_length: return None
-    y_target = y_data[i_out]
+    y_target = y_data[i_out] 
     S, S_fft = process_window(x_window)
     return (S, S_fft), y_target
 
@@ -215,11 +220,7 @@ def prepare_data(data, idx_dict, window_length, save_filepath):
     data = normalize_data(data, idx_dict)
     x_data = data['X']
     y_data = data['Y']
-    scaling = {
-        'x_min': data['x_min'],
-        'x_max': data['x_max'],
-        'y_min': data['y_min'],
-        'y_max': data['y_max']}
+    scaling = data['scaling_factors']
     image_size = window_length + 1
     n_appliances = y_data.shape[1]
     
@@ -253,7 +254,7 @@ def prepare_data(data, idx_dict, window_length, save_filepath):
         np.save(filepaths_dict['FFT'], FFT)
         np.save(filepaths_dict['Y'], Y)
         np.savez(filepaths_dict['scaling'], **scaling)
-        filepaths[split_dir] = filepaths_dict
+        filepaths[split] = filepaths_dict
         
     return filepaths
 
@@ -430,25 +431,29 @@ def test_model(model_filepath, processed_data_filepath, batch_size, show=False):
 
 if __name__ == '__main__':
     
-    data = load_data(ampds_filepath, T_limit=T_limit)
-    idx_dict = precompute_indices(
-        num_timesteps=data['num_timesteps'],
-        window_length=window_length,
-        stride=stride,
-        train_val_test_split=train_test_val_split,
-        number_blocks=42)
+    processed_data_filepaths_dict_save_filepath = os.path.join(processed_data_filepath, "filepaths.pkl")
+    def preprocess_data(ampds_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath):
     
-    processed_data_filepaths = {}
-    for target_appliance in data["appliance_names"]:
+        data = load_data(ampds_filepath, T_limit=T_limit)
+        idx_dict = precompute_indices(
+            num_timesteps=data['T'],
+            window_length=window_length,
+            stride=stride,
+            train_val_test_split=train_test_val_split,
+            number_blocks=42)
         
-        target_data = filter_by_appliances(data, [target_appliance])
-        target_data_filepath = processed_data_filepath + f'_{target_appliance}'
-        train_data_filepath, val_data_filepath, test_data_filepath = prepare_data(target_data, idx_dict, window_length, target_data_filepath)
-        filepath_dict = {
-            'train': train_data_filepath,
-            'val': val_data_filepath,
-            'test': test_data_filepath}
-        processed_data_filepaths[target_appliance] = filepath_dict
+        os.makedirs(processed_data_filepath, exist_ok=True)
+        processed_data_filepaths = {}
+        for target_appliance in data["appliance_names"]:
+            
+            target_data = filter_by_appliances(data, [target_appliance])
+            target_data_folderpath = os.path.join(processed_data_filepath, target_appliance)
+            os.makedirs(target_data_folderpath, exist_ok=True)
+            target_data_filepath = os.path.join(target_data_folderpath, os.path.basename(target_data_folderpath))
+            filepaths_dict = prepare_data(target_data, idx_dict, window_length, target_data_filepath)
+            processed_data_filepaths[target_appliance] = filepaths_dict
+        with open(processed_data_filepaths_dict_save_filepath, "wb") as f: pickle.dump(processed_data_filepaths, f)
+    preprocess_data(ampds_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath)
     
     # Train One Model per Appliance
     results = {}
