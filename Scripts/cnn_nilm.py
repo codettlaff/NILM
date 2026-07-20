@@ -260,7 +260,7 @@ def prepare_data(data, idx_dict, window_length, save_filepath):
 
 def load_processed_data(processed_data_filepaths_dict):
     
-    scaling_factors = np.load(processed_data_filepaths_dict['scaling_factors'])
+    scaling_factors = np.load(processed_data_filepaths_dict['scaling'])
     S = np.load(processed_data_filepaths_dict['S'], mmap_mode='r')
     FFT = np.load(processed_data_filepaths_dict['FFT'], mmap_mode='r')
     Y = np.load(processed_data_filepaths_dict['Y'], mmap_mode='r')
@@ -453,15 +453,19 @@ if __name__ == '__main__':
             filepaths_dict = prepare_data(target_data, idx_dict, window_length, target_data_filepath)
             processed_data_filepaths[target_appliance] = filepaths_dict
         with open(processed_data_filepaths_dict_save_filepath, "wb") as f: pickle.dump(processed_data_filepaths, f)
-    preprocess_data(ampds_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath)
+    # preprocess_data(ampds_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath)
+    
+    # Load Preproccessed Data Filepaths Dict
+    with open(processed_data_filepaths_dict_save_filepath, "rb") as f: processed_data_filepaths = pickle.load(f)
+    appliance_names = list(processed_data_filepaths.keys())
     
     # Train One Model per Appliance
     results = {}
-    for target_appliance in tqdm(data["appliance_names"], desc="Appliances"):
+    for target_appliance in tqdm(appliance_names, desc="Appliances"):
         model_filepath = os.path.join(results_dir, f"nilm_cnn_{target_appliance}.keras")
-        train_data_filepath = processed_data_filepaths['target_appliance']['train']
-        val_data_filepath = processed_data_filepaths['target_appliance']['val']
-        test_data_filepath = processed_data_filepaths['target_appliance']['test']
+        train_data_filepath = processed_data_filepaths[target_appliance]['train']
+        val_data_filepath = processed_data_filepaths[target_appliance]['val']
+        test_data_filepath = processed_data_filepaths[target_appliance]['test']
     
         processed_training_data = load_processed_data(train_data_filepath)
         processed_val_data = load_processed_data(val_data_filepath)
