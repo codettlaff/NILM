@@ -336,7 +336,7 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
         num_val_batches = 0
         
         for i in tqdm(range(0, n_val, batch_size), desc='Validation', leave=False):
-            batch_idx = np.arrange(i, min(i + batch_size, n_val))
+            batch_idx = np.arange(i, min(i + batch_size, n_val))
             (S, FFT), Y = generate_batch(processed_val_data, batch_idx)
             loss = model.test_on_batch([S, FFT], Y)
             val_loss += loss
@@ -358,7 +358,7 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
                 print("Early Stopping")
                 break
             
-        model.save(model_filepath)
+    model.save(model_filepath)
     
 def test_model(model_filepath, processed_data_filepath, batch_size, show=False):
     
@@ -471,14 +471,17 @@ if __name__ == '__main__':
         processed_val_data = load_processed_data(val_data_filepath)
         processed_test_data = load_processed_data(test_data_filepath)
         
+        # Create Model Architecture
+        model = build_model()
+        
         # Train
         print(f"\n{'=' * 80}")
         print(f"Training model for: {target_appliance}")
         print(f"{'=' * 80}")
         train_model(
-            data=data,
-            idx_dict=idx_dict,
-            window_length=window_length,
+            model=model,
+            processed_training_data=processed_training_data,
+            processed_val_data=processed_val_data,
             epochs=epochs,
             batch_size=batch_size,
             model_filepath=model_filepath)
