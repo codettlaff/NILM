@@ -17,7 +17,7 @@ base_dir = os.path.join(os.path.dirname(__file__), '..')
 data_dir = os.path.join(base_dir, 'Data')
 results_dir = os.path.join(base_dir, 'Results')
 ampds_filepath = os.path.join(data_dir, 'ampds2.npz')
-processed_data = os.path.join(data_dir, 'ampds2_processed')
+processed_data_filepath = os.path.join(data_dir, 'ampds2_processed')
 model_save_filepath = os.path.join(results_dir, 'nilm_cnn_model_2month.keras')
 
 T_limit = 86400 # Two Months
@@ -27,7 +27,7 @@ epochs = 20
 batch_size = 32
 target_appliances = ['DWE']
 
-def load_data(ampds_filepath, T_limit, target_appliances=None):
+def load_data(ampds_filepath, T_limit):
     
     data = np.load(ampds_filepath)
     X, Y = data['X'], data['Y'] 
@@ -39,16 +39,18 @@ def load_data(ampds_filepath, T_limit, target_appliances=None):
     X = X[:, [0,2]] # Keep only P and Q
     Y = Y[:,:,0] # Keep only P
     
-    if not target_appliances: target_appliances = appliance_names
-    indices = [i for i, name in enumerate(appliance_names) if name in target_appliances]
-    appliance_names = appliance_names[indices]
-    Y = Y[:,indices]
-    
     return {
         'X': X,
         'Y': Y,
         'T': T,
         'appliance_names': appliance_names}
+
+def filter_by_appliances(data, target_appliances):
+    
+    appliance_names = data['appliance_names']
+    indices = [i for i, name in enumerate(appliance_names) if name in target_appliances]
+    appliance_names = appliance_names[indices]
+    data['Y'] = data['Y'][:,indices]
 
 def precompute_indices(num_timesteps, window_length, stride, train_val_test_split, number_blocks, seed=42):
     
@@ -221,24 +223,51 @@ def prepare_data(data, idx_dict, window_length, save_filepath):
     image_size = window_length + 1
     n_appliances = y_data.shape[1]
     
+    filepaths = {}
     for split in ['train', 'val', 'test']:
         inp_idx, out_idx = idx_dict[split]
         n_samples = len(inp_idx)
         
-        # Preallocate Arrays
-        S = np.empty((n_samples, image_size, image_size), dtype=np.float32)
-        FFT = np.empty((n_samples, image_size, image_size, 1),dtype=np.float32)
+        # Preallocate arrays
+        S = np.empty((n_samples, image_size, image_size, 1), dtype=np.float32)
+        FFT = np.empty((n_samples, image_size, image_size, 1), dtype=np.float32)
         Y = np.empty((n_samples, n_appliances), dtype=np.float32)
         
-        # Fill arrays in place
+        # Fill arrays
         for j, (i_inp, i_out) in enumerate(zip(inp_idx, out_idx)):
-            
             (s, s_fft), y = generate_sample(x_data, y_data, i_inp, i_out, window_length)
-            S[j] = s.numpy()
-            FFT[j] = s_fft.numpy
+            S[j] = s
+            FFT[j] = s_fft
             Y[j] = y
-            
-        np.save(f"{save_filepath}_{split}.npz", S=S, FFT=FFT, Y=Y, **scaling)
+        
+        split_dir = f"{save_filepath}_{split}"
+        os.makedirs(split_dir, exist_ok=True)
+        
+        # Save arrays separately (memory-mappable)
+        filepaths_dict = {
+            'S': os.path.join(split_dir, "S.npy"),
+            'FFT': os.path.join(split_dir, "FFT.npy"),
+            'Y': os.path.join(split_dir, "Y.npy"),
+            'scaling': os.path.join(split_dir, "scaling.npz")}
+        np.save(filepaths_dict['S'], S)
+        np.save(filepaths_dict['FFT'], FFT)
+        np.save(filepaths_dict['Y'], Y)
+        np.savez(filepaths_dict['scaling'], **scaling)
+        filepaths[split_dir] = filepaths_dict
+        
+    return filepaths
+
+def load_processed_data(processed_data_filepaths_dict):
+    
+    scaling_factors = np.load(processed_data_filepaths_dict['scaling_factors'])
+    S = np.load(processed_data_filepaths_dict['S'], mmap_mode='r')
+    FFT = np.load(processed_data_filepaths_dict['FFT'], mmap_mode='r')
+    Y = np.load(processed_data_filepaths_dict['Y'], mmap_mode='r')
+    return {
+        'S': S,
+        'FFT': FFT,
+        'Y': Y,
+        'scaling_factors': scaling_factors}
 
 def generate_batch(processed_data, idx_list):
     S_batch = processed_data['S'][idx_list]
@@ -400,5 +429,58 @@ def test_model(model_filepath, processed_data_filepath, batch_size, show=False):
         "y_pred": y_pred_denorm}
 
 if __name__ == '__main__':
-    pass
-
+    
+    data = load_data(ampds_filepath, T_limit=T_limit)
+    idx_dict = precompute_indices(
+        num_timesteps=data['num_timesteps'],
+        window_length=window_length,
+        stride=stride,
+        train_val_test_split=train_test_val_split,
+        number_blocks=42)
+    
+    processed_data_filepaths = {}
+    for target_appliance in data["appliance_names"]:
+        
+        target_data = filter_by_appliances(data, [target_appliance])
+        target_data_filepath = processed_data_filepath + f'_{target_appliance}'
+        train_data_filepath, val_data_filepath, test_data_filepath = prepare_data(target_data, idx_dict, window_length, target_data_filepath)
+        filepath_dict = {
+            'train': train_data_filepath,
+            'val': val_data_filepath,
+            'test': test_data_filepath}
+        processed_data_filepaths[target_appliance] = filepath_dict
+    
+    # Train One Model per Appliance
+    results = {}
+    for target_appliance in tqdm(data["appliance_names"], desc="Appliances"):
+        model_filepath = os.path.join(results_dir, f"nilm_cnn_{target_appliance}.keras")
+        train_data_filepath = processed_data_filepaths['target_appliance']['train']
+        val_data_filepath = processed_data_filepaths['target_appliance']['val']
+        test_data_filepath = processed_data_filepaths['target_appliance']['test']
+    
+        processed_training_data = load_processed_data(train_data_filepath)
+        processed_val_data = load_processed_data(val_data_filepath)
+        processed_test_data = load_processed_data(test_data_filepath)
+        
+        # Train
+        print(f"\n{'=' * 80}")
+        print(f"Training model for: {target_appliance}")
+        print(f"{'=' * 80}")
+        train_model(
+            data=data,
+            idx_dict=idx_dict,
+            window_length=window_length,
+            epochs=epochs,
+            batch_size=batch_size,
+            model_filepath=model_filepath)
+        
+        # Test
+        print("\nStarting Testing...")
+        results[target_appliance] = test_model(
+            model_filepath=model_filepath,
+            data=data,
+            test_idx=idx_dict['test'],
+            window_length=window_length,
+            batch_size=batch_size,
+            scaling_factors=data['scaling_factors'],
+            show=True)
