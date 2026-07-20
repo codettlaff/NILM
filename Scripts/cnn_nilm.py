@@ -360,14 +360,13 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
             
     model.save(model_filepath)
     
-def test_model(model_filepath, processed_data_filepath, batch_size, show=False):
+def test_model(model_filepath, processed_testing_data, batch_size, show=False):
     
     model = load_model(model_filepath)
-    processed_data = np.load(processed_data_filepath)
     
-    y_min = processed_data['y_min']
-    y_max = processed_data['y_max']
-    n_samples = len(processed_data['Y'])
+    y_min = processed_testing_data['scaling_factors']['y_min']
+    y_max = processed_testing_data['scaling_factors']['y_max']
+    n_samples = len(processed_testing_data['Y'])
     
     y_true_all = []
     y_pred_all = []
@@ -375,7 +374,7 @@ def test_model(model_filepath, processed_data_filepath, batch_size, show=False):
     # Inference Loop
     for i in range(0, n_samples, batch_size):
         batch_idx = np.arange(i, min(i + batch_size, n_samples))
-        (S, FFT), y_true = generate_batch(processed_data, batch_idx)
+        (S, FFT), y_true = generate_batch(processed_testing_data, batch_idx)
         y_pred = model.predict_on_batch([S, FFT])
         y_true_all.append(y_true)
         y_pred_all.append(y_pred) 
