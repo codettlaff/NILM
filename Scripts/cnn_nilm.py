@@ -34,6 +34,94 @@ target_appliances = ['DWE']
 # Do timing and computational requirement analysis (Aim for Lightweight Code).
 # Save these results in trained model metadata.
 
+# Processed Dataset Metadata
+# metadata = {
+#     # preprocessing
+#     "window_length": window_length,
+#     "stride": stride,
+
+#     # dataset
+#     "num_timesteps": data["T"],
+#     "num_train_samples": len(idx_dict["train"][0]),
+#     "num_val_samples": len(idx_dict["val"][0]),
+#     "num_test_samples": len(idx_dict["test"][0]),
+
+#     # dimensions
+#     "input_shape_time": S.shape[1:],
+#     "input_shape_fft": FFT.shape[1:],
+#     "output_shape": Y.shape[1:],
+
+#     # appliance
+#     "target_appliances": data["appliance_names"],
+
+#     # normalization
+#     "x_min": scaling["x_min"],
+#     "x_max": scaling["x_max"],
+#     "y_min": scaling["y_min"],
+#     "y_max": scaling["y_max"]}
+
+# Save Model Metadata
+# model_metadata = {
+
+#     # architecture
+#     "model_name": "CNN PQ Signature",
+#     "trainable_parameters": model.count_params(),
+
+#     # training
+#     "epochs_requested": epochs,
+#     "epochs_completed": epoch+1,
+#     "batch_size": batch_size,
+#     "best_validation_loss": best_val_loss,
+
+#     # preprocessing
+#     "window_length": window_length,
+#     "stride": stride,
+
+#     # dimensions
+#     "input_shape": model.input_shape,
+#     "output_shape": model.output_shape,
+
+#     # timing
+#     "training_time_seconds": ...,
+#     "average_epoch_time": ...,
+
+#     # computation
+#     "samples_per_second": ...,
+
+#     # memory
+#     "peak_RAM_MB": ...,
+#     "model_size_MB": ...}
+
+# Measure training time
+# import time
+# at the beginning of train_model():
+# training_start = time.perf_counter()
+# epoch_times = [], time each epoch
+# know: total training time, average epoch time, fastest epoch, slowest epoch.
+# can get samples per second
+# model_size_MB = (os.path.getsize(model_filepath) /1024**2)
+# RAM usage
+# import psutil
+# process = psutil.Process(os.getpid())
+# memory_mB = prcess.memory_infor().rss / 1024**2
+# record before and after training
+# peak_memory = max(peak_memory, process.memory_info().rss)
+# GPU memory (optional)
+# tf.config.experimental.get_memory_info('GPU:0')
+# computational complexity: number of parameters, model size, inference latency, training throughput
+# Inference timing
+# Automatically record execution environment every time we train a model or ru inference
+# Operative system
+# platform.system(), platform.release(), platform.version(), platform.machine(), platform.precessor(), platform.node()
+# CPU information: physical cores, logical cores, cpu_freq_MHz
+# current utilization: psutil.cpu_percent(interval=1)
+# psutil.cpu_percent(interval=1)
+# RAM
+# memory = psutil.virtual_memory() memory.total, memory.available
+# current process_memory, peak process memory (run rss through training, record maximum)
+# gpu information
+# tensorflow version, python version
+
 def load_data(ampds_filepath, T_limit):
     
     data = np.load(ampds_filepath)
