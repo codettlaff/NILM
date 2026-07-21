@@ -330,19 +330,12 @@ def prepare_data(data, idx_dict, window_length, stride, save_filepath):
     return filepaths
 
 def load_processed_data(processed_data_filepaths_dict):
-
-    with np.load(processed_data_filepaths_dict["scaling"]) as scaling:
-        scaling_factors = {
-            "x_min": scaling["x_min"],
-            "x_max": scaling["x_max"],
-            "y_min": scaling["y_min"],
-            "y_max": scaling["y_max"]}
-
+    with open(processed_data_filepaths_dict["metadata"], "rb") as f: metadata = pickle.load(f)
     return {
         "S": np.load(processed_data_filepaths_dict["S"], mmap_mode="r"),
         "FFT": np.load(processed_data_filepaths_dict["FFT"], mmap_mode="r"),
         "Y": np.load(processed_data_filepaths_dict["Y"], mmap_mode="r"),
-        "scaling_factors": scaling_factors}
+        "normalization": metadata["normalization"]}
 
 def generate_batch(processed_data, idx_list):
     S_batch = processed_data['S'][idx_list]
@@ -595,7 +588,7 @@ if __name__ == '__main__':
             filepaths_dict = prepare_data(target_data, idx_dict, window_length, stride, target_data_filepath)
             processed_data_filepaths[target_appliance] = filepaths_dict
         with open(processed_data_filepaths_dict_save_filepath, "wb") as f: pickle.dump(processed_data_filepaths, f)
-    preprocess_data(ampds_filepath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
+    # preprocess_data(ampds_filepath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
     
     # Load Preproccessed Data Filepaths Dict
     with open(processed_data_filepaths_dict_save_filepath, "rb") as f: processed_data_filepaths = pickle.load(f)
