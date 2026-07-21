@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Jul 17 11:07:59 2026
+Created on Tue Jul 21 10:52:35 2026
 
 @author: codett
 """
@@ -14,113 +14,23 @@ from tensorflow.keras import layers, models
 from tensorflow.keras.models import load_model
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' # Hide Warnings
 
+import time
+import platform
+import psutil
+
 base_dir = os.path.join(os.path.dirname(__file__), '..')
 data_dir = os.path.join(base_dir, 'Data')
 results_dir = os.path.join(base_dir, 'Results')
+
 ampds_filepath = os.path.join(data_dir, 'ampds2.npz')
-processed_data_filepath = os.path.join(data_dir, 'ampds2_processed')
-model_save_filepath = os.path.join(results_dir, 'nilm_cnn_model_2month.keras')
+processed_data_folderpath = os.path.join(data_dir, 'ampds2_processed')
+model_save_folderpath = os.path.join(results_dir, 'nilm_cnn_model')
 
 T_limit = 86400 # Two Months
 train_test_val_split = [0.7, 0.15, 0.15]
 window_length, stride = 30, 1
 epochs = 20
 batch_size = 32
-target_appliances = ['DWE']
-
-# To Add:
-# Instead of just scaling factors, save metadata.
-# Attatch metadata to both pre-processed data and trained model.
-# Do timing and computational requirement analysis (Aim for Lightweight Code).
-# Save these results in trained model metadata.
-
-# Processed Dataset Metadata
-# metadata = {
-#     # preprocessing
-#     "window_length": window_length,
-#     "stride": stride,
-
-#     # dataset
-#     "num_timesteps": data["T"],
-#     "num_train_samples": len(idx_dict["train"][0]),
-#     "num_val_samples": len(idx_dict["val"][0]),
-#     "num_test_samples": len(idx_dict["test"][0]),
-
-#     # dimensions
-#     "input_shape_time": S.shape[1:],
-#     "input_shape_fft": FFT.shape[1:],
-#     "output_shape": Y.shape[1:],
-
-#     # appliance
-#     "target_appliances": data["appliance_names"],
-
-#     # normalization
-#     "x_min": scaling["x_min"],
-#     "x_max": scaling["x_max"],
-#     "y_min": scaling["y_min"],
-#     "y_max": scaling["y_max"]}
-
-# Save Model Metadata
-# model_metadata = {
-
-#     # architecture
-#     "model_name": "CNN PQ Signature",
-#     "trainable_parameters": model.count_params(),
-
-#     # training
-#     "epochs_requested": epochs,
-#     "epochs_completed": epoch+1,
-#     "batch_size": batch_size,
-#     "best_validation_loss": best_val_loss,
-
-#     # preprocessing
-#     "window_length": window_length,
-#     "stride": stride,
-
-#     # dimensions
-#     "input_shape": model.input_shape,
-#     "output_shape": model.output_shape,
-
-#     # timing
-#     "training_time_seconds": ...,
-#     "average_epoch_time": ...,
-
-#     # computation
-#     "samples_per_second": ...,
-
-#     # memory
-#     "peak_RAM_MB": ...,
-#     "model_size_MB": ...}
-
-# Measure training time
-# import time
-# at the beginning of train_model():
-# training_start = time.perf_counter()
-# epoch_times = [], time each epoch
-# know: total training time, average epoch time, fastest epoch, slowest epoch.
-# can get samples per second
-# model_size_MB = (os.path.getsize(model_filepath) /1024**2)
-# RAM usage
-# import psutil
-# process = psutil.Process(os.getpid())
-# memory_mB = prcess.memory_infor().rss / 1024**2
-# record before and after training
-# peak_memory = max(peak_memory, process.memory_info().rss)
-# GPU memory (optional)
-# tf.config.experimental.get_memory_info('GPU:0')
-# computational complexity: number of parameters, model size, inference latency, training throughput
-# Inference timing
-# Automatically record execution environment every time we train a model or ru inference
-# Operative system
-# platform.system(), platform.release(), platform.version(), platform.machine(), platform.precessor(), platform.node()
-# CPU information: physical cores, logical cores, cpu_freq_MHz
-# current utilization: psutil.cpu_percent(interval=1)
-# psutil.cpu_percent(interval=1)
-# RAM
-# memory = psutil.virtual_memory() memory.total, memory.available
-# current process_memory, peak process memory (run rss through training, record maximum)
-# gpu information
-# tensorflow version, python version
 
 def load_data(ampds_filepath, T_limit):
     
@@ -230,12 +140,9 @@ def precompute_indices(num_timesteps, window_length, stride, train_val_test_spli
         else: idx_dict[label] = (np.array([], dtype=int), np.array([], dtype=int))
     return idx_dict
 
-
 def normalize_data(data, idx_dict):
     
     data_normalized = data.copy()
-    # data_normalized['X'] = data['X'].copy()
-    # data_normalized['Y'] = data['Y'].copy()
     
     # Training timesteps
     train_inp, train_out = idx_dict['train']
@@ -284,14 +191,14 @@ def process_window(x_win):
 
 def generate_sample(x_data, y_data, i_inp, i_out, window_length):
 
-    x_window = x_data[i_inp : i_inp + window_length] # (W,2)
+    x_window = x_data[i_inp : i_inp + window_length]
     if x_window.shape[0] != window_length: return None
     y_target = y_data[i_out] 
     S, S_fft = process_window(x_window)
     return (S, S_fft), y_target
 
-def prepare_data(data, idx_dict, window_length, save_filepath):
-    
+def prepare_data(data, idx_dict, window_length, stride, save_filepath):
+
     # Normalize using training statistics
     data = normalize_data(data, idx_dict)
     x_data = data['X']
@@ -299,41 +206,94 @@ def prepare_data(data, idx_dict, window_length, save_filepath):
     scaling = data['scaling_factors']
     image_size = window_length + 1
     n_appliances = y_data.shape[1]
-    
     filepaths = {}
+    
+    process = psutil.Process(os.getpid())
+    
     for split in ['train', 'val', 'test']:
+        split_start = time.perf_counter()
         inp_idx, out_idx = idx_dict[split]
         n_samples = len(inp_idx)
         
-        # Preallocate arrays
+        # Allocate Arrays
         S = np.empty((n_samples, image_size, image_size, 1), dtype=np.float32)
-        FFT = np.empty((n_samples, image_size, image_size, 1), dtype=np.float32)
+        FFT = np.empty_like(S)
         Y = np.empty((n_samples, n_appliances), dtype=np.float32)
         
-        # Fill arrays
+        # Generate Samples
         for j, (i_inp, i_out) in enumerate(zip(inp_idx, out_idx)):
             (s, s_fft), y = generate_sample(x_data, y_data, i_inp, i_out, window_length)
             S[j] = s
             FFT[j] = s_fft
             Y[j] = y
+            
+        split_time = time.perf_counter() - split_start
         
+        # Output Directory
         split_dir = f"{save_filepath}_{split}"
         os.makedirs(split_dir, exist_ok=True)
         
-        # Save arrays separately (memory-mappable)
-        filepaths_dict = {
-            'S': os.path.join(split_dir, "S.npy"),
-            'FFT': os.path.join(split_dir, "FFT.npy"),
-            'Y': os.path.join(split_dir, "Y.npy"),
-            'scaling': os.path.join(split_dir, "scaling.npz")}
+        # Save Arrays
+        np.save(os.path.join(split_dir, "S.npy"), S)
+        np.save(os.path.join(split_dir, "FFT.npy"), FFT)
+        np.save(os.path.join(split_dir, "Y.npy"), Y)
         
-        np.save(filepaths_dict['S'], S)
-        np.save(filepaths_dict['FFT'], FFT)
-        np.save(filepaths_dict['Y'], Y)
-        np.savez(filepaths_dict['scaling'], **scaling)
-        filepaths[split] = filepaths_dict
+        # Dataset Metadata
+        metadata = {
+            # Dataset
+            "split": split,
+            "dataset": {
+                "num_timesteps": int(data["T"]),
+                "num_samples": int(n_samples),
+                "target_appliances": list(data["appliance_names"])},
+            "preprocessing":{
+                "window_length": window_length,
+                "stride": stride},
+            "dimensions": {
+                "input_shape_time": S.shape[1:],
+                "input_shape_fft": FFT.shape[1:],
+                "output_shape": Y.shape[1:]},
+            "normalization": {
+                "x_min": scaling["x_min"],
+                "x_max": scaling["x_max"],
+                "y_min": scaling["y_min"],
+                "y_max": scaling["y_max"]},
+            "timing": {
+                "preprocessing_seconds": split_time,
+                "samples_per_second": (n_samples / split_time if split_time > 0 else None)},
+            "computation": {
+                "S_size_MB":
+                    S.nbytes / 1024**2,
+                "FFT_size_MB":
+                    FFT.nbytes / 1024**2,
+                "Y_size_MB":
+                    Y.nbytes / 1024**2,
+                "total_dataset_size_MB":
+                    (S.nbytes + FFT.nbytes + Y.nbytes) / 1024**2,
+                "process_RAM_MB":
+                    process.memory_info().rss / 1024**2},
+            "environment": {
+                "python_version": platform.python_version(),
+                "tensorflow_version": tf.__version__,
+                "os": platform.system(),
+                "os_release": platform.release(),
+                "machine": platform.machine(),
+                "processor": platform.processor(),
+                "physical_cores": psutil.cpu_count(logical=False),
+                "logical_cores": psutil.cpu_count(logical=True),
+                "total_RAM_GB":
+                    psutil.virtual_memory().total / 1024**3}}
+            
+        metadata_filepath = os.path.join(split_dir, "metadata.pkl")
+        with open(metadata_filepath, "wb") as f: pickle.dump(metadata, f)
         
-    return filepaths
+        filepaths[split] = {
+            "S": os.path.join(split_dir, "S.npy"),
+            "FFT": os.path.join(split_dir, "FFT.npy"),
+            "Y": os.path.join(split_dir, "Y.npy"),
+            "metadata": metadata_filepath}
+        
+        return filepaths
 
 def load_processed_data(processed_data_filepaths_dict):
 
@@ -350,224 +310,3 @@ def load_processed_data(processed_data_filepaths_dict):
         "Y": np.load(processed_data_filepaths_dict["Y"], mmap_mode="r"),
         "scaling_factors": scaling_factors}
 
-def generate_batch(processed_data, idx_list):
-    S_batch = processed_data['S'][idx_list]
-    FFT_batch = processed_data['FFT'][idx_list]
-    Y_batch = processed_data['Y'][idx_list]
-    return (S_batch, FFT_batch), Y_batch
-
-def build_model():
-    
-    def build_branch(input_layer):
-        x = layers.Conv2D(30, (10, 10), activation='relu')(input_layer)
-        x = layers.Conv2D(30, (8, 8), activation='relu')(x)
-        x = layers.Conv2D(40, (6, 6), activation='relu')(x)
-        x = layers.Conv2D(50, (5, 5), activation='relu')(x)
-        x = layers.Conv2D(50, (5, 5), activation='relu')(x)
-        x = layers.Flatten()(x)
-        return x
-    
-    # Inputs
-    inp_time = layers.Input(shape=(31, 31, 1))
-    inp_freq = layers.Input(shape=(31, 31, 1))
-
-    # Branches
-    branch_time = build_branch(inp_time)
-    branch_freq = build_branch(inp_freq)
-    x = layers.Concatenate()([branch_time, branch_freq])
-
-    # Dense + Output
-    x = layers.Dense(1024, activation='relu')(x)
-    out = layers.Dense(1)(x)
-
-    # Model
-    model = models.Model(inputs=[inp_time, inp_freq], outputs=out)
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss='mse') 
-    return model
-
-def train_model(model, processed_training_data, processed_val_data, epochs, batch_size, model_filepath):
-    
-    best_val_loss = np.inf
-    patience = 5
-    patience_counter = 0
-    
-    n_train = len(processed_training_data['Y'])
-    n_val = len(processed_val_data['Y'])
-    
-    for epoch in tqdm(range(epochs), desc="Epochs"):
-        
-        # Training
-        train_loss = 0.0
-        num_train_batches = 0
-        
-        perm = np.random.permutation(n_train)
-        for i in tqdm(range(0, n_train, batch_size), desc="Training", leave=False):
-            
-            batch_idx = perm[i:i + batch_size]
-            (S, FFT), Y = generate_batch(processed_training_data, batch_idx)
-            loss = model.train_on_batch([S, FFT], Y)
-            train_loss += loss
-            num_train_batches += 1
-            
-        train_loss /= num_train_batches
-        
-        # Validation
-        val_loss = 0.0
-        num_val_batches = 0
-        
-        for i in tqdm(range(0, n_val, batch_size), desc='Validation', leave=False):
-            batch_idx = np.arange(i, min(i + batch_size, n_val))
-            (S, FFT), Y = generate_batch(processed_val_data, batch_idx)
-            loss = model.test_on_batch([S, FFT], Y)
-            val_loss += loss
-            num_val_batches += 1
-        val_loss /= num_val_batches
-        print(
-            f"Epoch {epoch + 1}/{epochs} "
-            f"- train_loss: {train_loss:.4f} "
-            f"- val_loss: {val_loss:.4f}")
-        
-        # Early Stopping
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            patience_counter = 0
-            model.save(model_filepath)
-        else: 
-            patience_counter += 1
-            if patience_counter >= patience:
-                print("Early Stopping")
-                break
-            
-    model.save(model_filepath)
-    
-def test_model(model_filepath, processed_testing_data, batch_size, show=False):
-    
-    model = load_model(model_filepath)
-    
-    y_min = processed_testing_data['scaling_factors']['y_min']
-    y_max = processed_testing_data['scaling_factors']['y_max']
-    n_samples = len(processed_testing_data['Y'])
-    
-    y_true_all = []
-    y_pred_all = []
-    
-    # Inference Loop
-    for i in range(0, n_samples, batch_size):
-        batch_idx = np.arange(i, min(i + batch_size, n_samples))
-        (S, FFT), y_true = generate_batch(processed_testing_data, batch_idx)
-        y_pred = model.predict_on_batch([S, FFT])
-        y_true_all.append(y_true)
-        y_pred_all.append(y_pred) 
-        
-    # Concatenate Batches
-    y_true = np.vstack(y_true_all)
-    y_pred = np.vstack(y_pred_all)
-    
-    # Metrics in Normalized Units
-    mse_norm = np.mean((y_pred - y_true) ** 2)
-    rmse_norm = np.sqrt(mse_norm)
-    
-    # Convert back to Watts
-    y_true_denorm = y_true * (y_max - y_min) + y_min
-    y_pred_denorm = y_pred * (y_max - y_min) + y_min
-
-    mse_denorm = np.mean((y_pred_denorm - y_true_denorm) ** 2)
-    rmse_denorm = np.sqrt(mse_denorm)
-
-    abs_error = np.abs(y_pred_denorm - y_true_denorm)
-    mae = np.mean(abs_error)
-
-    avg_true = np.mean(y_true_denorm)
-
-    eacc = 1.0 - (
-        np.sum(abs_error) /
-        (2.0 * np.sum(y_true_denorm)))
-    
-    # Display Results
-    if show:
-        print("\nResults")
-        print("=" * 80)
-        print(f"{'Metric':<20}{'Value':>15}")
-        print("-" * 80)
-        print(f"{'Normalized MSE':<20}{mse_norm:>15.6f}")
-        print(f"{'Normalized RMSE':<20}{rmse_norm:>15.6f}")
-        print(f"{'MSE (Watts)':<20}{mse_denorm:>15.6f}")
-        print(f"{'RMSE (Watts)':<20}{rmse_denorm:>15.6f}")
-        print(f"{'MAE (Watts)':<20}{mae:>15.6f}")
-        print(f"{'Average Load':<20}{avg_true:>15.6f}")
-        print(f"{'EACC':<20}{eacc:>15.6f}")
-        print("=" * 80)
-        
-    return {
-        "mse_norm": mse_norm,
-        "rmse_norm": rmse_norm,
-        "mse_denorm": mse_denorm,
-        "rmse_denorm": rmse_denorm,
-        "mae": mae,
-        "eacc": eacc,
-        "y_true": y_true_denorm,
-        "y_pred": y_pred_denorm}
-
-if __name__ == '__main__':
-    
-    processed_data_filepaths_dict_save_filepath = os.path.join(processed_data_filepath, "filepaths.pkl")
-    def preprocess_data(ampds_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath):
-    
-        data = load_data(ampds_filepath, T_limit=T_limit)
-        idx_dict = precompute_indices(
-            num_timesteps=data['T'],
-            window_length=window_length,
-            stride=stride,
-            train_val_test_split=train_test_val_split,
-            number_blocks=42)
-        
-        os.makedirs(processed_data_filepath, exist_ok=True)
-        processed_data_filepaths = {}
-        for target_appliance in data["appliance_names"]:
-            target_data = filter_by_appliances(data, [target_appliance])
-            target_data_folderpath = os.path.join(processed_data_filepath, target_appliance)
-            os.makedirs(target_data_folderpath, exist_ok=True)
-            target_data_filepath = os.path.join(target_data_folderpath, os.path.basename(target_data_folderpath))
-            filepaths_dict = prepare_data(target_data, idx_dict, window_length, target_data_filepath)
-            processed_data_filepaths[target_appliance] = filepaths_dict
-        with open(processed_data_filepaths_dict_save_filepath, "wb") as f: pickle.dump(processed_data_filepaths, f)
-    preprocess_data(ampds_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath)
-    
-    # Load Preproccessed Data Filepaths Dict
-    with open(processed_data_filepaths_dict_save_filepath, "rb") as f: processed_data_filepaths = pickle.load(f)
-    appliance_names = list(processed_data_filepaths.keys())
-    
-    # Train One Model per Appliance
-    results = {}
-    for target_appliance in tqdm(appliance_names, desc="Appliances"):
-        model_filepath = os.path.join(results_dir, f"nilm_cnn_{target_appliance}.keras")
-        train_data_filepath = processed_data_filepaths[target_appliance]['train']
-        val_data_filepath = processed_data_filepaths[target_appliance]['val']
-        test_data_filepath = processed_data_filepaths[target_appliance]['test']
-    
-        processed_training_data = load_processed_data(train_data_filepath)
-        processed_val_data = load_processed_data(val_data_filepath)
-        processed_test_data = load_processed_data(test_data_filepath)
-        
-        # Create Model Architecture
-        model = build_model()
-        
-        # Train
-        # print(f"\n{'=' * 80}")
-        # print(f"Training model for: {target_appliance}")
-        # print(f"{'=' * 80}")
-        # train_model(
-        #     model=model,
-        #     processed_training_data=processed_training_data,
-        #     processed_val_data=processed_val_data,
-        #     epochs=epochs,
-        #     batch_size=batch_size,
-        #     model_filepath=model_filepath)
-        
-        # Test
-        print("\nStarting Testing...")
-        results[target_appliance] = test_model(
-            model_filepath=model_filepath,
-            processed_testing_data=processed_test_data,
-            batch_size=batch_size,
-            show=True)

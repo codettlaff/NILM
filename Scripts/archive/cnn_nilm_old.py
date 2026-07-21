@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jul 17 09:29:09 2026
+
+@author: codett
+"""
+
 import os
 from tqdm import tqdm
 import numpy as np
@@ -20,6 +27,12 @@ epochs = 20
 # epochs = 1
 batch_size = 32
 target_appliances = ['DWE']
+
+# Remaining Changes to make:
+# Generate_batch() repeatedly computes PQ and FFT for same windows every communication round.
+# want to generate and save S, S_fft, targets ahead of time.
+
+# want to split training and testing data first, then save scaling factors
 
 def load_data(ampds_filepath, T_limit, target_appliances=None):
 
@@ -65,44 +78,92 @@ def load_data(ampds_filepath, T_limit, target_appliances=None):
         'appliance_names': appliance_names,
         'num_timesteps': T_limit}
 
-def precompute_indices(num_timesteps, window_length, stride, train_val_test_split, seed=42):
-    # Shuffles and Splits without actually making windows.
-
-    num_windows = (num_timesteps - window_length + 1) // stride + 1
-    inp_idx = np.arange(0, num_windows * stride, stride)
-
+def precompute_indices(num_timesteps, window_length, stride, train_val_test_split, number_blocks, seed=42):
+    
     center_offset = window_length // 2
-    out_idx = inp_idx + center_offset
-
-    # Avoid overflow at edges.
-    valid_mask = out_idx < num_timesteps
-    inp_idx = inp_idx[valid_mask]
-    out_idx = out_idx[valid_mask]
-
-    # Shuffle indices
+    guard = window_length - 1
+    guard_left = guard // 2
+    guard_right = guard - guard_left
     rng = np.random.default_rng(seed)
-    perm = rng.permutation(len(inp_idx))
-    inp_idx = inp_idx[perm]
-    out_idx = out_idx[perm]
+    
+    # Number of blocks in each split
+    n_train_blocks = int(round(train_val_test_split[0] * number_blocks))
+    n_val_blocks = int(round(train_val_test_split[1] * number_blocks))
+    n_test_blocks = number_blocks - n_train_blocks - n_val_blocks
+    
+    # Timesteps in Each Split
+    n_train = int(train_val_test_split[0] * num_timesteps)
+    n_val = int(train_val_test_split[1] * num_timesteps)
+    n_test = num_timesteps - n_train - n_val
+    
+    # Divide total number of timesteps as evenly as possible over given number of blocks.
+    def make_lengths(total_length, n_blocks):
+        lengths = np.full(n_blocks, total_length // n_blocks, dtype=int)
+        lengths[:total_length % n_blocks] += 1 # Add leftover timesteps to first blocks.
+        return lengths # Array of size equal to number of blocks. Contains n_timesteps for each block.
+    
+    # Create block lengths (number of timesteps per block).
+    block_lengths = np.concatenate([
+        make_lengths(n_train, n_train_blocks),
+        make_lengths(n_val, n_val_blocks),
+        make_lengths(n_test, n_test_blocks)])
+    
+    # Indicate which dataset each block belongs to.
+    # Not yet shuffled.
+    block_labels = (
+        ['train'] * n_train_blocks + 
+        ['val'] * n_val_blocks +
+        ['test'] * n_test_blocks)
+    
+    # Randomly assign blocks among the timeline
+    # Solves seasonal drift problem.
+    perm = rng.permutation(number_blocks)
+    block_lengths = block_lengths[perm]
+    block_labels = [block_labels[i] for i in perm]
 
-    # Split
-    n = len(inp_idx)
-    n_train = int(train_val_test_split[0] * n)
-    n_val = int(train_val_test_split[1] * n)
-
-    train_inp = inp_idx[:n_train]
-    train_out = out_idx[:n_train]
-
-    val_inp = inp_idx[n_train:n_train + n_val]
-    val_out = out_idx[n_train:n_train + n_val]
-
-    test_inp = inp_idx[n_train + n_val:]
-    test_out = out_idx[n_train + n_val:]
-
-    return {
-        'train': (train_inp, train_out),
-        'val': (val_inp, val_out),
-        'test': (test_inp, test_out)}
+    # Compute block boundaries
+    starts = np.zeros(number_blocks, dtype=int) # Beginning timestep of each block
+    ends = np.zeros(number_blocks, dtype=int) # End timestep of each block
+    
+    start=0
+    for i, length in enumerate(block_lengths):
+        starts[i] = start
+        end = min(start + length, num_timesteps)
+        ends[i] = end
+        start = end # Move to next block
+        
+    split = {
+        'train': ([],[]),
+        'val': ([],[]),
+        'test': ([],[])}
+    
+    for i in range(number_blocks):
+        start = starts[i]
+        end = ends[i]
+        
+        # Split guard across both sides of a boundary
+        usable_start = start
+        usable_end = end
+        if i > 0 and block_labels[i] != block_labels[i - 1]: usable_start += guard_right # Previous block belongs to different split.
+        if i < number_blocks - 1 and block_labels[i] != block_labels[i + 1]: usable_end -= guard_left # Next block belongs to different split.
+        if usable_end >= usable_start + window_length: # Check remaining region is large enough
+            inp = np.arange(usable_start, usable_end - window_length  + 1, stride) # Input indices are start of each window
+            out = inp + center_offset # Target indices are center of each window
+            split[block_labels[i]][0].append(inp) # Add to train, val, or test
+            split[block_labels[i]][1].append(out)
+        
+    # Recombine windows from multiple blocks belonging to the same split.
+    # Randomly shuffle windows within each split.
+    idx_dict = {}
+    for label in ['train', 'val', 'test']:
+        if split[label][0]:
+            inp = np.concatenate(split[label][0])
+            out = np.concatenate(split[label][1])
+            perm = rng.permutation(len(inp))
+            idx_dict[label] = (inp[perm], out[perm])
+        else: idx_dict['label'] = (np.array([], dtype=int), np.array([], dtype=int))
+        
+    return idx_dict
 
 def process_window(x_win):
     x_win = tf.convert_to_tensor(x_win, dtype=tf.float32)
@@ -402,7 +463,8 @@ if __name__ == '__main__':
             num_timesteps=data['num_timesteps'],
             window_length=window_length,
             stride=stride,
-            train_val_test_split=train_test_val_split)
+            train_val_test_split=train_test_val_split,
+            number_blocks=42)
 
         # Save Each Appliance Model Separately
         model_filepath = os.path.join(results_dir, f"nilm_cnn_{appliance}.keras")
@@ -411,13 +473,13 @@ if __name__ == '__main__':
         print(f"\n{'=' * 80}")
         print(f"Training model for: {appliance}")
         print(f"{'=' * 80}")
-        # train_model(
-        #     data=data,
-        #     idx_dict=idx_dict,
-        #     window_length=window_length,
-        #     epochs=epochs,
-        #     batch_size=batch_size,
-        #     model_filepath=model_filepath)
+        train_model(
+            data=data,
+            idx_dict=idx_dict,
+            window_length=window_length,
+            epochs=epochs,
+            batch_size=batch_size,
+            model_filepath=model_filepath)
 
         # Test
         print("\nStarting Testing...")
