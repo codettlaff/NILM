@@ -282,25 +282,6 @@ def process_window(x_win):
     
     return S, S_fft
 
-def process_window_old(x_win):
-    x_win = tf.convert_to_tensor(x_win, dtype=tf.float32)
-    p, q = x_win[:, 0], x_win[:, 1]
-
-    # Build PQ Signature
-    p_col, q_row = tf.reshape(p, (-1,1)), tf.reshape(q, (1, -1))
-    S_xy = tf.sqrt(p_col**2 + q_row**2) # Compute pairwise S_xy, producing (W,W) matrix.
-    top = tf.concat([tf.zeros((1,1)), q_row], axis=1) # Build first row (q only)
-    left = tf.concat([p_col, S_xy], axis=1) # Build remaining rows. First column is p only.
-    S = tf.concat([top, left], axis=0) # Combine into PQ image.
-    S = tf.expand_dims(S, -1) # Add Channel Dimension.
-
-    # Build FFT
-    S_fft = tf.signal.fft2d(tf.cast(S[:,:,0], tf.complex64)) # Compute 2D Fourier transform of PQ image.
-    S_fft = tf.abs(S_fft) # Keep magnitude only.
-    S_fft = tf.expand_dims(S_fft, -1) # Add Channel Dimension
-
-    return (S, S_fft)
-
 def generate_sample(x_data, y_data, i_inp, i_out, window_length):
 
     x_window = x_data[i_inp : i_inp + window_length] # (W,2)
