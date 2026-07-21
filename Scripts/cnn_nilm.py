@@ -32,6 +32,40 @@ window_length, stride = 30, 1
 epochs = 20
 batch_size = 32
 
+def save_pickle(obj, filepath):
+    with open(filepath, 'wb') as f: pickle.dump(obj, f)
+    
+def get_model_info(model, model_filepath, model_name):
+    return {
+        "name": model_name,
+        "filepath": model_filepath,
+        "size_MB": os.path.getsize(model_filepath) / 1024**2,
+        "trainable_parameters": model.count_params(),
+        "input_shape": model.input_shape,
+        "output_shape": model.output_shape}
+
+def get_environment_info():
+    return {
+        "python_version": platform.python_version(),
+        "tensorflow_version": tf.__version__,
+        "os": platform.system(),
+        "os_release": platform.release(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "physical_cores": psutil.cpu_count(logical=False),
+        "logical_cores": psutil.cpu_count(logical=True),
+        "total_RAM_GB": psutil.virtual_memory().total / 1024**3}
+
+def get_ram_usage(process): return process.memory_info().rss / 1024**2
+
+def summarize_times(times, total):
+    return {
+        "epoch_times": times,
+        "total_seconds": total,
+        "average_seconds": float(np.mean(times)),
+        "fastest_seconds": float(np.min(times)),
+        "slowest_seconds": float(np.max(times))}
+
 def load_data(ampds_filepath, T_limit):
     
     data = np.load(ampds_filepath)
@@ -416,19 +450,11 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
         
     total_training_time = time.perf_counter() - training_start
     model.save(model_filepath)
-    model_size_MB = os.path.getsize(model_filepath) / 1024**2 
     
     # Training Metadata
     training_metadata = {
-        "model": {
-
-            "model_name": "CNN PQ Signature",
-            "trainable_parameters": model.count_params(),
-            "input_shape": model.input_shape,
-            "output_shape": model.output_shape,
-            "model_size_MB": model_size_MB},
+        "model": get_model_info(model, model_filepath, model_name='PQ CNN NILM'),
         "training": {
-
             "epochs_requested": epochs,
             "epochs_completed": epochs_completed,
             "batch_size": batch_size,
@@ -436,29 +462,14 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
             "best_validation_loss": float(best_val_loss),
             "training_loss_history": train_losses,
             "validation_loss_history": val_losses},
-        "timing": {
-
-            "total_training_seconds": total_training_time,
-            "average_epoch_seconds": float(np.mean(epoch_times)),
-            "fastest_epoch_seconds": float(np.min(epoch_times)),
-            "slowest_epoch_seconds": float(np.max(epoch_times)),
-            "epoch_times_seconds": epoch_times},
+        "timing": summarize_times(epoch_times, total_training_time),
         "computation": {
             "training_samples": n_train,
             "validation_samples": n_val,
             "training_samples_per_second": n_train * epochs_completed / total_training_time,
             "peak_RAM_MB": peak_ram / 1024**2,
             "current_RAM_MB": process.memory_info().rss / 1024**2},
-        "environment": {
-            "python_version": platform.python_version(),
-            "tensorflow_version": tf.__version__,
-            "os": platform.system(),
-            "os_release": platform.release(),
-            "machine": platform.machine(),
-            "processor": platform.processor(),
-            "physical_cores": psutil.cpu_count(logical=False),
-            "logical_cores": psutil.cpu_count(logical=True),
-            "total_RAM_GB": psutil.virtual_memory().total / 1024**3}}
+        "environment": get_environment_info()}
     
     metadata_filepath = os.path.splitext(model_filepath)[0] + "_metadata.pkl"
     with open(metadata_filepath, "wb") as f: pickle.dump(training_metadata, f)
@@ -527,24 +538,6 @@ def test_model(model_filepath, processed_testing_data, batch_size, show=False, s
         
         
     # Results
-    model_info = {
-        "filepath": model_filepath,
-        "size_MB": os.path.getsize(model_filepath) / 1014**2,
-        "trainable_parameters": model.count_params(),
-        "input_shape": model.input_shape,
-        "output_shape": model.output_shape}
-    
-    execution_environment = {
-        "python_version": platform.python_version(),
-        "tensorflow_version": tf.__version__,
-        "os": platform.system(),
-        "os_release": platform.release(),
-        "machine": platform.machine(),
-        "processor": platform.processor(),
-        "physical_cores": psutil.cpu_count(logical=False),
-        "logical_cores": psutil.cpu_count(logical=True),
-        "total_RAM_GB": psutil.virtual_memory().total / 1024**3}
-    
     error_results = {
         "mse_norm": mse_norm,
         "rmse_norm": rmse_norm,
@@ -566,8 +559,8 @@ def test_model(model_filepath, processed_testing_data, batch_size, show=False, s
         "current_RAM_MB": process.memory_info().rss / 1024**2}
     
     results = {
-        "model": model_info,
-        "execution_environment": execution_environment,
+        "model": get_model_info(),
+        "execution_environment": get_environment_info(),
         "timing_results": timing_results,
         "computation_results": computation_results,
         "true_output": y_true_denorm,
@@ -578,4 +571,68 @@ def test_model(model_filepath, processed_testing_data, batch_size, show=False, s
         with open(save_filepath, 'wb') as f: pickle.dump(results, f)
         
     return results
+
+if __name__ == '__main__':
+    
+    processed_data_filepaths_dict_save_filepath = os.path.join(processed_data_folderpath, "filepaths.pkl")
+    def preprocess_data(ampds_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath):
+    
+        data = load_data(ampds_filepath, T_limit=T_limit)
+        idx_dict = precompute_indices(
+            num_timesteps=data['T'],
+            window_length=window_length,
+            stride=stride,
+            train_val_test_split=train_test_val_split,
+            number_blocks=42)
+        
+        os.makedirs(processed_data_filepath, exist_ok=True)
+        processed_data_filepaths = {}
+        for target_appliance in data["appliance_names"]:
+            target_data = filter_by_appliances(data, [target_appliance])
+            target_data_folderpath = os.path.join(processed_data_filepath, target_appliance)
+            os.makedirs(target_data_folderpath, exist_ok=True)
+            target_data_filepath = os.path.join(target_data_folderpath, os.path.basename(target_data_folderpath))
+            filepaths_dict = prepare_data(target_data, idx_dict, window_length, stride, target_data_filepath)
+            processed_data_filepaths[target_appliance] = filepaths_dict
+        with open(processed_data_filepaths_dict_save_filepath, "wb") as f: pickle.dump(processed_data_filepaths, f)
+    preprocess_data(ampds_filepath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
+    
+    # Load Preproccessed Data Filepaths Dict
+    with open(processed_data_filepaths_dict_save_filepath, "rb") as f: processed_data_filepaths = pickle.load(f)
+    appliance_names = list(processed_data_filepaths.keys())
+    
+    # Train One Model per Appliance
+    results = {}
+    for target_appliance in tqdm(appliance_names, desc="Appliances"):
+        model_filepath = os.path.join(results_dir, f"nilm_cnn_{target_appliance}.keras")
+        train_data_filepath = processed_data_filepaths[target_appliance]['train']
+        val_data_filepath = processed_data_filepaths[target_appliance]['val']
+        test_data_filepath = processed_data_filepaths[target_appliance]['test']
+    
+        processed_training_data = load_processed_data(train_data_filepath)
+        processed_val_data = load_processed_data(val_data_filepath)
+        processed_test_data = load_processed_data(test_data_filepath)
+        
+        # Create Model Architecture
+        model = build_model()
+        
+        # Train
+        # print(f"\n{'=' * 80}")
+        # print(f"Training model for: {target_appliance}")
+        # print(f"{'=' * 80}")
+        # train_model(
+        #     model=model,
+        #     processed_training_data=processed_training_data,
+        #     processed_val_data=processed_val_data,
+        #     epochs=epochs,
+        #     batch_size=batch_size,
+        #     model_filepath=model_filepath)
+        
+        # Test
+        print("\nStarting Testing...")
+        results[target_appliance] = test_model(
+            model_filepath=model_filepath,
+            processed_testing_data=processed_test_data,
+            batch_size=batch_size,
+            show=True)
         
