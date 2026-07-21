@@ -610,16 +610,16 @@ if __name__ == '__main__':
         model = build_model()
         
         # Train
-        # print(f"\n{'=' * 80}")
-        # print(f"Training model for: {target_appliance}")
-        # print(f"{'=' * 80}")
-        # train_model(
-        #     model=model,
-        #     processed_training_data=processed_training_data,
-        #     processed_val_data=processed_val_data,
-        #     epochs=epochs,
-        #     batch_size=batch_size,
-        #     model_filepath=model_filepath)
+        print(f"\n{'=' * 80}")
+        print(f"Training model for: {target_appliance}")
+        print(f"{'=' * 80}")
+        train_model(
+            model=model,
+            processed_training_data=processed_training_data,
+            processed_val_data=processed_val_data,
+            epochs=epochs,
+            batch_size=batch_size,
+            model_filepath=model_filepath)
         
         # Test
         print("\nStarting Testing...")
