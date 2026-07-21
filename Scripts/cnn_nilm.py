@@ -566,7 +566,7 @@ def test_model(model_filepath, processed_testing_data, batch_size, show=False, s
         "current_RAM_MB": process.memory_info().rss / 1024**2}
     
     results = {
-        "model": model,
+        "model": model_info,
         "execution_environment": execution_environment,
         "timing_results": timing_results,
         "computation_results": computation_results,
