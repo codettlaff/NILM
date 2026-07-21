@@ -462,3 +462,120 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
     
     metadata_filepath = os.path.splitext(model_filepath)[0] + "_metadata.pkl"
     with open(metadata_filepath, "wb") as f: pickle.dump(training_metadata, f)
+    
+def test_model(model_filepath, processed_testing_data, batch_size, show=False, save_filepath=None):
+    
+    inference_start = time.perf_counter()
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info().rss
+    
+    model = load_model(model_filepath)
+    y_min = processed_testing_data['scaling_factors']['y_min']
+    y_max = processed_testing_data['scaling_factors']['y_max']
+    
+    n_samples = len(processed_testing_data['Y'])
+    
+    y_true_all = []
+    y_pred_all = []
+    batch_times = []
+    
+    # Inference
+    for i in range(0, n_samples, batch_size):
+        
+        batch_start = time.perf_counter()
+        batch_idx = np.arange(i, min(i + batch_size, n_samples))
+        (S, FFT), y_true = generate_batch(processed_testing_data, batch_idx)
+        y_pred = model.predict_on_batch([S, FFT])
+        batch_times.append(time.perf_counter() - batch_start)
+        peak_ram = max(peak_ram, process.memory_info().rss)
+        y_true_all.append(y_true)
+        y_pred_all.append(y_pred)
+        
+    total_inference_time = (time.perf_counter() - inference_start)
+    
+    y_true = np.vstack(y_true_all)
+    y_pred = np.vstack(y_pred_all)
+    
+    # Metrics
+    mse_norm = np.mean((y_pred - y_true) ** 2)
+    rmse_norm = np.sqrt(mse_norm)
+    
+    # Convert to Watts
+    y_true_denorm = y_true * (y_max - y_min) + y_min
+    y_pred_denorm = y_pred * (y_max - y_min) + y_min
+    mse_denorm = np.mean((y_pred_denorm - y_true_denorm) ** 2)
+    rmse_denorm = np.sqrt(mse_denorm)
+    abs_error = np.abs(y_pred_denorm - y_true_denorm)
+    mae = np.mean(abs_error)
+    avg_true = np.mean(y_true_denorm)
+    eacc = 1.0 - (np.sum(abs_error) / (2.0 * np.sum(y_true_denorm)))
+    
+    # Display Results
+    if show:
+        print("\nResults")
+        print("=" * 80)
+        print(f"{'Metric':<20}{'Value':>15}")
+        print("-" * 80)
+        print(f"{'Normalized MSE':<20}{mse_norm:>15.6f}")
+        print(f"{'Normalized RMSE':<20}{rmse_norm:>15.6f}")
+        print(f"{'MSE (Watts)':<20}{mse_denorm:>15.6f}")
+        print(f"{'RMSE (Watts)':<20}{rmse_denorm:>15.6f}")
+        print(f"{'MAE (Watts)':<20}{mae:>15.6f}")
+        print(f"{'Average Load':<20}{avg_true:>15.6f}")
+        print(f"{'EACC':<20}{eacc:>15.6f}")
+        print("=" * 80)
+        
+        
+    # Results
+    model_info = {
+        "filepath": model_filepath,
+        "size_MB": os.path.getsize(model_filepath) / 1014**2,
+        "trainable_parameters": model.count_params(),
+        "input_shape": model.input_shape,
+        "output_shape": model.output_shape}
+    
+    execution_environment = {
+        "python_version": platform.python_version(),
+        "tensorflow_version": tf.__version__,
+        "os": platform.system(),
+        "os_release": platform.release(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "physical_cores": psutil.cpu_count(logical=False),
+        "logical_cores": psutil.cpu_count(logical=True),
+        "total_RAM_GB": psutil.virtual_memory().total / 1024**3}
+    
+    error_results = {
+        "mse_norm": mse_norm,
+        "rmse_norm": rmse_norm,
+        "mse_denorm": mse_denorm,
+        "rmse_denorm": rmse_denorm,
+        "mae": mae,
+        "eacc": eacc}
+        
+    timing_results = {
+        "total_inference_seconds": total_inference_time,
+        "average_batch_seconds": float(np.mean(batch_times)),
+        "fastest_batch_seconds": float(np.min(batch_times)),
+        "slowest_batch_seconds": float(np.max(batch_times)),
+        "samples_per_seconds": n_samples / total_inference_time,
+        "milliseconds_per_sample": 1000 * total_inference_time / n_samples}
+    
+    computation_results = {
+        "peak_RAM_MB": peak_ram / 1024**2,
+        "current_RAM_MB": process.memory_info().rss / 1024**2}
+    
+    results = {
+        "model": model,
+        "execution_environment": execution_environment,
+        "timing_results": timing_results,
+        "computation_results": computation_results,
+        "true_output": y_true_denorm,
+        "predicted_output": y_pred_denorm,
+        "error_results": error_results}
+    
+    if save_filepath:
+        with open(save_filepath, 'wb') as f: pickle.dump(results, f)
+        
+    return results
+        
