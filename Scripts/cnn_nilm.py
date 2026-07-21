@@ -474,8 +474,8 @@ def test_model(model_filepath, processed_testing_data, batch_size, show=False, s
     peak_ram = process.memory_info().rss
     
     model = load_model(model_filepath)
-    y_min = processed_testing_data['scaling_factors']['y_min']
-    y_max = processed_testing_data['scaling_factors']['y_max']
+    y_min = processed_testing_data['normalization']['y_min']
+    y_max = processed_testing_data['normalization']['y_max']
     
     n_samples = len(processed_testing_data['Y'])
     
@@ -552,7 +552,7 @@ def test_model(model_filepath, processed_testing_data, batch_size, show=False, s
         "current_RAM_MB": process.memory_info().rss / 1024**2}
     
     results = {
-        "model": get_model_info(),
+        "model": get_model_info(model, model_filepath, model_name='PQ CNN NILM'),
         "execution_environment": get_environment_info(),
         "timing_results": timing_results,
         "computation_results": computation_results,
