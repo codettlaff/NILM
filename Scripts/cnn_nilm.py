@@ -363,7 +363,7 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
     train_losses = []
     val_losses = []
     
-    epochs_complete = 0
+    epochs_completed = 0
     for epoch in tqdm(range(epochs), desc='Epochs'):
         
         epoch_start = time.perf_counter()
