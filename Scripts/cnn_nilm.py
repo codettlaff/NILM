@@ -327,7 +327,7 @@ def prepare_data(data, idx_dict, window_length, stride, save_filepath):
             "Y": os.path.join(split_dir, "Y.npy"),
             "metadata": metadata_filepath}
         
-        return filepaths
+    return filepaths
 
 def load_processed_data(processed_data_filepaths_dict):
 
