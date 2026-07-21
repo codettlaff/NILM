@@ -310,3 +310,155 @@ def load_processed_data(processed_data_filepaths_dict):
         "Y": np.load(processed_data_filepaths_dict["Y"], mmap_mode="r"),
         "scaling_factors": scaling_factors}
 
+def generate_batch(processed_data, idx_list):
+    S_batch = processed_data['S'][idx_list]
+    FFT_batch = processed_data['FFT'][idx_list]
+    Y_batch = processed_data['Y'][idx_list]
+    return (S_batch, FFT_batch), Y_batch
+
+def build_model():
+    
+    def build_branch(input_layer):
+        x = layers.Conv2D(30, (10, 10), activation='relu')(input_layer)
+        x = layers.Conv2D(30, (8, 8), activation='relu')(x)
+        x = layers.Conv2D(40, (6, 6), activation='relu')(x)
+        x = layers.Conv2D(50, (5, 5), activation='relu')(x)
+        x = layers.Conv2D(50, (5, 5), activation='relu')(x)
+        x = layers.Flatten()(x)
+        return x
+    
+    # Inputs
+    inp_time = layers.Input(shape=(31, 31, 1))
+    inp_freq = layers.Input(shape=(31, 31, 1))
+
+    # Branches
+    branch_time = build_branch(inp_time)
+    branch_freq = build_branch(inp_freq)
+    x = layers.Concatenate()([branch_time, branch_freq])
+
+    # Dense + Output
+    x = layers.Dense(1024, activation='relu')(x)
+    out = layers.Dense(1)(x)
+
+    # Model
+    model = models.Model(inputs=[inp_time, inp_freq], outputs=out)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss='mse') 
+    return model
+
+def train_model(model, processed_training_data, processed_val_data, epochs, batch_size, model_filepath):
+    
+    training_start = time.perf_counter()
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info().rss
+    
+    best_val_loss = np.inf
+    best_epoch = 0
+    patience = 5
+    patience_counter = 0
+    
+    n_train = len(processed_training_data['Y'])
+    n_val = len(processed_val_data['Y'])
+    
+    epoch_times = []
+    train_losses = []
+    val_losses = []
+    
+    epochs_complete = 0
+    for epoch in tqdm(range(epochs), desc='Epochs'):
+        
+        epoch_start = time.perf_counter()
+        
+        # Training
+        train_loss = 0.0
+        num_train_batches = 0
+        perm = np.random.permutation(n_train)
+        
+        for i in tqdm(range(0, n_train, batch_size), desc="Training", leave=False):
+            
+            batch_idx = perm[i:i + batch_size]
+            (S, FFT), Y = generate_batch(processed_training_data, batch_idx)
+            loss = model.train_on_batch([S, FFT], Y)
+            train_loss += loss
+            num_train_batches += 1
+            peak_ram = max(peak_ram, process.memory_info().rss)
+            
+        train_loss /= num_train_batches
+        
+        # Validation
+        val_loss = 0.0
+        num_val_batches = 0
+        
+        for i in tqdm(range(0, n_val, batch_size), desc='Validation', leave=False):
+            batch_idx = np.arange(i, min(i + batch_size, n_val))
+            (S, FFT), Y = generate_batch(processed_val_data, batch_idx)
+            loss = model.test_on_batch([S, FFT], Y)
+            val_loss += loss
+            num_val_batches += 1
+            
+        val_loss /= num_val_batches
+        
+        epoch_time = time.perf_counter() - epoch_start
+        epoch_times.append(epoch_time)
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        epochs_completed += 1 
+        
+        # Early Stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_epoch = epoch + 1
+            patience_counter = 0 
+            model.save(model_filepath)
+            
+        else:
+            patience_counter += 1 
+            if patience_counter >= patience: break
+        
+    total_training_time = time.perf_counter() - training_start
+    model.save(model_filepath)
+    model_size_MB = os.path.getsize(model_filepath) / 1024**2 
+    
+    # Training Metadata
+    training_metadata = {
+        "model": {
+
+            "model_name": "CNN PQ Signature",
+            "trainable_parameters": model.count_params(),
+            "input_shape": model.input_shape,
+            "output_shape": model.output_shape,
+            "model_size_MB": model_size_MB},
+        "training": {
+
+            "epochs_requested": epochs,
+            "epochs_completed": epochs_completed,
+            "batch_size": batch_size,
+            "best_epoch": best_epoch,
+            "best_validation_loss": float(best_val_loss),
+            "training_loss_history": train_losses,
+            "validation_loss_history": val_losses},
+        "timing": {
+
+            "total_training_seconds": total_training_time,
+            "average_epoch_seconds": float(np.mean(epoch_times)),
+            "fastest_epoch_seconds": float(np.min(epoch_times)),
+            "slowest_epoch_seconds": float(np.max(epoch_times)),
+            "epoch_times_seconds": epoch_times},
+        "computation": {
+            "training_samples": n_train,
+            "validation_samples": n_val,
+            "training_samples_per_second": n_train * epochs_completed / total_training_time,
+            "peak_RAM_MB": peak_ram / 1024**2,
+            "current_RAM_MB": process.memory_info().rss / 1024**2},
+        "environment": {
+            "python_version": platform.python_version(),
+            "tensorflow_version": tf.__version__,
+            "os": platform.system(),
+            "os_release": platform.release(),
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+            "physical_cores": psutil.cpu_count(logical=False),
+            "logical_cores": psutil.cpu_count(logical=True),
+            "total_RAM_GB": psutil.virtual_memory().total / 1024**3}}
+    
+    metadata_filepath = os.path.splitext(model_filepath)[0] + "_metadata.pkl"
+    with open(metadata_filepath, "wb") as f: pickle.dump(training_metadata, f)
