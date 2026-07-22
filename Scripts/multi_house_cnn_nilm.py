@@ -72,7 +72,7 @@ def load_data(ukdale_filepath, T_limit=None):
     time_seconds = inputs[:, 0]
     time_of_day = (time_seconds % 86400) / 3600.0 # Convert to hour of day.
     
-    P_agg = inputs[:, 1]
+    P_agg = inputs[:, 2]
     X = np.column_stack((time_of_day, P_agg)).astype(np.float32)
     
     Y = outputs[:, 2:]
@@ -91,7 +91,7 @@ def filter_by_appliance(data, target_appliances):
     target_data = data.copy()
     appliance_names = data['appliance_names']
     indices = [i for i, name in enumerate(appliance_names) if name in target_appliances]
-    appliance_names = appliance_names[indices]
+    target_data['appliance_names'] = [appliance_names[i] for i in indices]
     target_data['appliance_names'] = appliance_names
     target_data['Y'] = target_data['Y'][:,indices]
     return target_data
@@ -201,7 +201,7 @@ def normalize_data(data, idx_dict):
     p_min = train_X[:, 1].min()
     p_max = train_X[:, 1].max()
     p_range = max(p_max - p_min, 1e-12)
-    p_agg = (data['x'][:, 1] - p_min) / p_range
+    p_agg = (data['X'][:, 1] - p_min) / p_range
     
     # Normalize appliance powers
     y_min = train_Y.min(axis=0)
@@ -235,8 +235,7 @@ def generate_sample(x_data, y_data, i_inp, i_out, window_length):
     if x_win.shape[0] != window_length: return None
     
     p_seq, time_features = process_window(x_win)
-    center = i_out + window_length // 2
-    y_target = y_data[center]
+    y_target = y_data[i_out]
     
     return (p_seq, time_features), y_target
 
@@ -437,7 +436,7 @@ def test_model(model_filepath, processed_testing_data, batch_size, show=False, s
         batch_idx = np.arange(i, min(i + batch_size, n_samples))
         (X_p, X_time), y_true = generate_batch(processed_testing_data, batch_idx)
         
-        y_pred = model.predict_on_batch([X_p, X_times])
+        y_pred = model.predict_on_batch([X_p, X_time])
         batch_times.append(time.perf_counter() - batch_start)
         peak_ram = max( peak_ram, process.memory_info().rss)
         
@@ -514,6 +513,32 @@ def test_model(model_filepath, processed_testing_data, batch_size, show=False, s
 if __name__ == '__main__':
     
     ukdale_filepath = os.path.join(ukdale_folderpath, 'ukdale1.mat')
-    load_data(ukdale_filepath, T_limit)
-    print('')
+    processed_data_filepaths_dict_save_filepath = os.path.join(processed_data_folderpath, "filepaths.pkl")
     
+    def preprocess_data(ukdale_filepath, processed_data_filepath, T_limit, processed_data_filepaths_dict_save_filepath):
+    
+            data = load_data(ukdale_filepath, T_limit=T_limit)
+            idx_dict = precompute_indices(
+                num_timesteps=len(data['X']),
+                window_length=window_length,
+                stride=stride,
+                train_val_test_split=train_test_val_split,
+                number_blocks=42)
+            
+            os.makedirs(processed_data_filepath, exist_ok=True)
+            processed_data_filepaths = {}
+            
+            for target_appliance in data['appliance_names']:
+                
+                target_data = filter_by_appliance(data, [target_appliance])
+                target_data_folderpath = os.path.join(processed_data_filepath, target_appliance)
+                os.makedirs(target_data_folderpath, exist_ok=True)
+                target_data_filepath = os.path.join(target_data_folderpath, os.path.basename(target_data_folderpath))
+                filepaths_dict = prepare_data(target_data, idx_dict, window_length, stride, target_data_filepath)
+                processed_data_filepaths[target_appliance] = filepaths_dict
+                
+            with open(processed_data_filepaths_dict_save_filepath, 'wb') as f:
+                pickle.dump(processed_data_filepaths, f)
+                
+    preprocess_data(ukdale_filepath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
+    print('')
