@@ -34,14 +34,6 @@ window_length, stride = 30, 1
 epochs = 20
 batch_size = 32
 
-# Change Model
-# Q data is not available for UK-DALE
-# Want to make use of temporal (time-of-use) data.
-# Branch 1 (CNN): P-only image (1D image)
-# Branch 2 (MPL): Temporal Features
-# Concatenate CNN features and temporal embedding beofre final dense layers.
-# Multi-Branch Architecture easy to extend later with additional inputs such as weather.
-
 def get_model_info(model, model_filepath, model_name):
     return {
         "name": model_name,
@@ -62,6 +54,14 @@ def get_environment_info():
         "physical_cores": psutil.cpu_count(logical=False),
         "logical_cores": psutil.cpu_count(logical=True),
         "total_RAM_GB": psutil.virtual_memory().total / 1024**3}
+
+def summarize_times(times, total):
+    return {
+        "epoch_times": times,
+        "total_seconds": total,
+        "average_seconds": float(np.mean(times)),
+        "fastest_seconds": float(np.min(times)),
+        "slowest_seconds": float(np.max(times))}
 
 def load_data(ukdale_filepath, T_limit=None):
     
@@ -244,7 +244,6 @@ def prepare_data(data, idx_dict, window_length, stride, save_filepath):
     data = normalize_data(data, idx_dict)
     x_data = data['X']
     y_data = data['Y']
-    scaling = data['scaling_factors']
     
     n_appliances = y_data.shape[1]
     filepaths = {}
@@ -279,8 +278,42 @@ def prepare_data(data, idx_dict, window_length, stride, save_filepath):
         np.save(os.path.join(split_dir, 'X_time.npy'), X_time)
         np.save(os.path.join(split_dir, 'Y_p.npy'), Y_p)
         
-        metadata = {} # Add this later
-        metadata['normalization'] = scaling
+        # Metadata
+        dataset = {
+            'num_timesteps': int(len(x_data)),
+            'num_samples': int(n_samples),
+            'target_appliances': list(data['appliance_names'])}
+        
+        preprocessing = {
+            'window_length': window_length,
+            'stride': stride}
+        
+        dimensions = {
+            'power_input_shape': X_p.shape[1:],
+            'time_input_shape': X_time.shape[1:],
+            'output_shape': Y_p.shape[1:]}
+        
+        timing = {
+            'preprocessing_seconds': split_time,
+            'samples_per_second': n_samples / split_time if split_time > 0 else None}
+        
+        computation = {
+            "X_p_size_MB": X_p.nbytes / 1024**2,
+            "X_time_size_MB": X_time.nbytes / 1024**2,
+            "Y_p_size_MB": Y_p.nbytes / 1024**2,
+            "total_dataset_size_MB": (X_p.nbytes + X_time.nbytes + Y_p.nbytes) / 1024**2,
+            "process_RAM_MB": process.memory_info().rss / 1024**2}
+        
+        metadata = {
+            'split': split,
+            'dataset': dataset,
+            'preprocessing': preprocessing,
+            'dimensions': dimensions,
+            'normalization': data['scaling_factors'],
+            'timing': timing,
+            'computation': computation,
+            'environment': get_environment_info()}
+     
         metadata_filepath = os.path.join(split_dir, 'metadata.pkl')
         with open(metadata_filepath, 'wb') as f: pickle.dump(metadata, f)
         
@@ -408,7 +441,30 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
     total_training_time = time.perf_counter() - training_start
     model.save(model_filepath)
     
-    training_metadata = {} # Add this later
+    # Training Metadata
+    training = {
+        'epochs_requested': epochs,
+        'epochs_completed': epochs_completed,
+        'batch_size': batch_size,
+        'best_epoch': best_epoch,
+        'best_validation_loss': float(best_val_loss),
+        'training_loss_history': train_losses,
+        'validation_loss_history': val_losses}
+    
+    computation = {
+        'training_samples': n_train,
+        'validation_samples': n_val,
+        'training_samples_per_second': n_train * epochs_completed / total_training_time,
+        'peak_RAM_MB': peak_ram / 1024**2,
+        'current_RAM_MB': process.memory_info().rss / 1024**2}
+    
+    training_metadata = {
+        'model': get_model_info(model, model_filepath, model_name=f'CNN NILM'),
+        'training': training,
+        'timing': summarize_times(epoch_times, total_training_time),
+        'computation': computation,
+        'environment': get_environment_info()}
+    
     metadata_filepath = (os.path.splitext(model_filepath)[0] + '_metadata.pkl')
     with open(metadata_filepath, 'wb') as f: pickle.dump(training_metadata, f)
     
