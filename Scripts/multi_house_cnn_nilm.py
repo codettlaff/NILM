@@ -42,6 +42,27 @@ batch_size = 32
 # Concatenate CNN features and temporal embedding beofre final dense layers.
 # Multi-Branch Architecture easy to extend later with additional inputs such as weather.
 
+def get_model_info(model, model_filepath, model_name):
+    return {
+        "name": model_name,
+        "filepath": model_filepath,
+        "size_MB": os.path.getsize(model_filepath) / 1024**2,
+        "trainable_parameters": model.count_params(),
+        "input_shape": model.input_shape,
+        "output_shape": model.output_shape}
+
+def get_environment_info():
+    return {
+        "python_version": platform.python_version(),
+        "tensorflow_version": tf.__version__,
+        "os": platform.system(),
+        "os_release": platform.release(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "physical_cores": psutil.cpu_count(logical=False),
+        "logical_cores": psutil.cpu_count(logical=True),
+        "total_RAM_GB": psutil.virtual_memory().total / 1024**3}
+
 def load_data(ukdale_filepath, T_limit=None):
     
     data = loadmat(ukdale_filepath)
@@ -393,6 +414,102 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
     with open(metadata_filepath, 'wb') as f: pickle.dump(training_metadata, f)
     
     return model_filepath, metadata_filepath
+
+def test_model(model_filepath, processed_testing_data, batch_size, show=False, save_filepath=None):
+    
+    inference_start = time.perf_counter()
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info().rss
+    
+    model = load_model(model_filepath)
+    y_min = processed_testing_data['normalization']['y_min']
+    y_max = processed_testing_data['normalization']['y_max']
+    n_samples = len(processed_testing_data['Y_p'])
+    
+    y_true_all = []
+    y_pred_all = []
+    batch_times = []
+    
+    # Inference
+    for i in range(0, n_samples, batch_size):
+        
+        batch_start = time.perf_counter()
+        batch_idx = np.arange(i, min(i + batch_size, n_samples))
+        (X_p, X_time), y_true = generate_batch(processed_testing_data, batch_idx)
+        
+        y_pred = model.predict_on_batch([X_p, X_times])
+        batch_times.append(time.perf_counter() - batch_start)
+        peak_ram = max( peak_ram, process.memory_info().rss)
+        
+        y_true_all.append(y_true)
+        y_pred_all.append(y_pred)
+        
+    total_inference_time = (time.perf_counter() - inference_start)
+    y_true = np.vstack(y_true_all)
+    y_pred = np.vstack(y_pred_all)
+    
+    # Metrics (normalized)
+    mse_norm = np.mean((y_pred - y_true) ** 2)
+    rmse_norm = np.sqrt(mse_norm)
+    
+    # Convert back to watts
+    y_true_denorm = y_true * (y_max - y_min) + y_min
+    y_pred_denorm = y_pred * (y_max - y_min) + y_min
+    
+    mse_denorm = np.mean((y_pred_denorm - y_true_denorm) ** 2)
+    rmse_denorm = np.sqrt(mse_denorm)
+    abs_error = np.abs(y_pred_denorm - y_true_denorm)
+    mae = np.mean(abs_error)
+    avg_true = np.mean(y_true_denorm)
+    eacc = (1.0 - np.sum(abs_error) / (2.0 * np.sum(y_true_denorm)))
+    
+    # Display Results
+    if show:
+        print("\nResults")
+        print("=" * 80)
+        print(f"{'Metric':<20}{'Value':>15}")
+        print("-" * 80)
+        print(f"{'Normalized MSE':<20}{mse_norm:>15.6f}")
+        print(f"{'Normalized RMSE':<20}{rmse_norm:>15.6f}")
+        print(f"{'MSE (Watts)':<20}{mse_denorm:>15.6f}")
+        print(f"{'RMSE (Watts)':<20}{rmse_denorm:>15.6f}")
+        print(f"{'MAE (Watts)':<20}{mae:>15.6f}")
+        print(f"{'Average Load':<20}{avg_true:>15.6f}")
+        print(f"{'EACC':<20}{eacc:>15.6f}")
+        print("=" * 80)
+        
+    error_results = {
+        "mse_norm": mse_norm,
+        "rmse_norm": rmse_norm,
+        "mse_denorm": mse_denorm,
+        "rmse_denorm": rmse_denorm,
+        "mae": mae,
+        "eacc": eacc}
+    
+    timing_results = {
+        "total_inference_seconds": total_inference_time,
+        "average_batch_seconds": float(np.mean(batch_times)),
+        "fastest_batch_seconds": float(np.min(batch_times)),
+        "slowest_batch_seconds": float(np.max(batch_times)),
+        "samples_per_seconds": n_samples / total_inference_time,
+        "milliseconds_per_sample": 1000 * total_inference_time / n_samples}
+    
+    computation_results = {
+        "peak_RAM_MB": peak_ram / 1024**2,
+        "current_RAM_MB": process.memory_info().rss / 1024**2}
+    
+    results = {
+        "model": get_model_info(model, model_filepath, model_name="1D CNN NILM"),
+        "execution_environment": get_environment_info(),
+        "timing_results": timing_results,
+        "computation_results": computation_results,
+        "true_output": y_true_denorm,
+        "predicted_output": y_pred_denorm,
+        "error_results": error_results}
+    
+    if save_filepath:
+        with open(save_filepath, 'wb') as f: pickle.dump(results, f)
+    return results
     
 if __name__ == '__main__':
     
