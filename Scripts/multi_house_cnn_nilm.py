@@ -617,6 +617,23 @@ if __name__ == '__main__':
         
     all_house_data_filepaths = preprocess_all_house_data(ukdale_folderpath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
     
+    def centralize_data(all_house_data_filepaths): 
+        # combine all five houses data into one database
+        # write to folder with filepaths pickle the way we did for original houses
+        # try to avoid openening all files at once and overloading ram
+        # do this for each appliance - combine all houses which share this appliance
+        
+        os.makedirs(output_folder, exist_ok=True)
+        centralized_filepaths = {}
+        
+        # Find all appliances present across every house
+        appliances = sorted({
+        appliance
+        for house in all_house_data_filepaths.values()
+        for appliance in house.keys()})
+        
+        
+    
     # Load pre-processed dataset filepaths
     with open(processed_data_filepaths_dict_save_filepath, 'rb') as f:
         processed_data_filepaths = pickle.load(f)
