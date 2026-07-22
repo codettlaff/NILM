@@ -330,7 +330,7 @@ def build_model(window_length):
     
     out = layers.Dense(1, name='power_output')(x)
     model = models.Model(inputs=[inp_power, inp_time], outputs=out)
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), los='mse')
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='mse')
     
     return model
 
@@ -354,14 +354,14 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
     
     epochs_completed = 0
     
-    for epoch in tqdm(range(epochs), esc='Epochs'):
+    for epoch in tqdm(range(epochs), desc='Epochs'):
         
         epoch_start = time.perf_counter()
         
         # Training
         train_loss = 0.0 
         num_train_batches = 0 
-        perm = np.random_permutation(n_train) 
+        perm = np.random.permutation(n_train) 
         
         for i in tqdm(range(0, n_train, batch_size), desc='Training', leave=False):
             
@@ -405,7 +405,7 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
             patience_counter += 1
             if patience_counter >= patience: break
         
-    total_training_time = (time.perf_counter - training_start)
+    total_training_time = time.perf_counter() - training_start
     model.save(model_filepath)
     
     training_metadata = {} # Add this later
@@ -540,5 +540,48 @@ if __name__ == '__main__':
             with open(processed_data_filepaths_dict_save_filepath, 'wb') as f:
                 pickle.dump(processed_data_filepaths, f)
                 
-    preprocess_data(ukdale_filepath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
+    # preprocess_data(ukdale_filepath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
     print('')
+    
+    # Load pre-processed dataset filepaths
+    with open(processed_data_filepaths_dict_save_filepath, 'rb') as f:
+        processed_data_filepaths = pickle.load(f)
+        
+    appliance_names = list(processed_data_filepaths.keys())
+    results = {}
+    
+    for target_appliance in tqdm(appliance_names, desc='Appliances'):
+        
+        model_filepath = os.path.join(results_dir, f'nilm_cnn_{target_appliance}.keras')
+        train_data_filepath = processed_data_filepaths[target_appliance]["train"]
+        val_data_filepath = processed_data_filepaths[target_appliance]["val"]
+        test_data_filepath = processed_data_filepaths[target_appliance]["test"]
+        processed_training_data = load_processed_data(train_data_filepath)
+        processed_val_data = load_processed_data(val_data_filepath)
+        processed_test_data = load_processed_data(test_data_filepath)
+        
+        # Build model
+        model = build_model(window_length)
+        
+        # Train
+        print(f"\n{'=' * 80}")
+        print(f"Training model for: {target_appliance}")
+        print(f"{'=' * 80}")
+        
+        train_model(
+            model=model,
+            processed_training_data=processed_training_data,
+            processed_val_data=processed_val_data,
+            epochs=epochs,
+            batch_size=batch_size,
+            model_filepath=model_filepath)
+        
+        # Test
+        print("\nStarting testing...")
+        results[target_appliance] = test_model(
+            model_filepath=model_filepath,
+            processed_testing_data=processed_test_data,
+            batch_size=batch_size,
+            show=True)
+    
+    
