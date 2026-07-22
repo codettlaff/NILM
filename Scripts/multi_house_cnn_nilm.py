@@ -606,9 +606,12 @@ if __name__ == '__main__':
     appliance_names = list(processed_data_filepaths.keys())
     results = {}
     
+    trained_model_folderpath = os.path.join(results_dir, 'ukdale_1d_cnn_nilm')
+    os.makedirs(trained_model_folderpath, exist_ok=True)
+    
     for target_appliance in tqdm(appliance_names, desc='Appliances'):
         
-        model_filepath = os.path.join(results_dir, f'nilm_cnn_{target_appliance}.keras')
+        model_filepath = os.path.join(trained_model_folderpath, f'nilm_cnn_{target_appliance}.keras')
         train_data_filepath = processed_data_filepaths[target_appliance]["train"]
         val_data_filepath = processed_data_filepaths[target_appliance]["val"]
         test_data_filepath = processed_data_filepaths[target_appliance]["test"]
