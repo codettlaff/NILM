@@ -568,6 +568,11 @@ def test_model(model_filepath, processed_testing_data, batch_size, show=False, s
     
 if __name__ == '__main__':
     
+    mat_filepaths = [
+        os.path.join(ukdale_folderpath, f)
+        for f in os.listdir(ukdale_folderpath)
+        if f.endswith('.mat')]
+    
     ukdale_filepath = os.path.join(ukdale_folderpath, 'ukdale1.mat')
     processed_data_filepaths_dict_save_filepath = os.path.join(processed_data_folderpath, "filepaths.pkl")
     
@@ -596,8 +601,21 @@ if __name__ == '__main__':
             with open(processed_data_filepaths_dict_save_filepath, 'wb') as f:
                 pickle.dump(processed_data_filepaths, f)
                 
-    # preprocess_data(ukdale_filepath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
-    print('')
+            return processed_data_filepaths
+    
+    def preprocess_all_house_data(ukdale_folderpath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath):
+        all_house_data_filepaths = {}
+        filepaths_dict_save_filepath = os.path.join(processed_data_folderpath, 'all_filepaths.pkl')
+        for mat_filepath in mat_filepaths:
+            house_name = os.path.basename(mat_filepath).split('.')[0]
+            house_processed_data_folderpath = os.path.join(processed_data_folderpath, house_name)
+            os.makedirs(house_processed_data_folderpath, exist_ok=True)
+            processed_data_filepaths = preprocess_data(mat_filepath, house_processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
+            all_house_data_filepaths[house_name] = processed_data_filepaths
+        with open(filepaths_dict_save_filepath, 'wb') as file: pickle.dump(file, all_house_data_filepaths)
+        return all_house_data_filepaths
+        
+    all_house_data_filepaths = preprocess_all_house_data(ukdale_folderpath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
     
     # Load pre-processed dataset filepaths
     with open(processed_data_filepaths_dict_save_filepath, 'rb') as f:
