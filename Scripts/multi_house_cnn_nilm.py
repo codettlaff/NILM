@@ -612,28 +612,155 @@ if __name__ == '__main__':
             os.makedirs(house_processed_data_folderpath, exist_ok=True)
             processed_data_filepaths = preprocess_data(mat_filepath, house_processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
             all_house_data_filepaths[house_name] = processed_data_filepaths
-        with open(filepaths_dict_save_filepath, 'wb') as file: pickle.dump(file, all_house_data_filepaths)
+        with open(filepaths_dict_save_filepath, 'wb') as file: pickle.dump(all_house_data_filepaths, file)
         return all_house_data_filepaths
         
-    all_house_data_filepaths = preprocess_all_house_data(ukdale_folderpath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
+    # all_house_data_filepaths = preprocess_all_house_data(ukdale_folderpath, processed_data_folderpath, T_limit, processed_data_filepaths_dict_save_filepath)
     
-    def centralize_data(all_house_data_filepaths): 
-        # combine all five houses data into one database
-        # write to folder with filepaths pickle the way we did for original houses
-        # try to avoid openening all files at once and overloading ram
-        # do this for each appliance - combine all houses which share this appliance
+    def centralize_data(all_house_data_filepaths, output_folder):
         
         os.makedirs(output_folder, exist_ok=True)
         centralized_filepaths = {}
         
-        # Find all appliances present across every house
+        # All appliances that appear in at least one house
         appliances = sorted({
-        appliance
-        for house in all_house_data_filepaths.values()
-        for appliance in house.keys()})
+            appliance
+            for house in all_house_data_filepaths.values()
+            for appliance in house.keys()})
         
-        
+        for appliance in appliances:
+            
+            centralized_filepaths[appliance] = {}
+            appliance_dir = os.path.join(output_folder, appliance)
+            os.makedirs(appliance_dir, exist_ok=True)
+            
+            for split in ['train', 'val', 'test']:
+                
+                # Pass 1: determine total size
+                total_samples = 0
+                p_shape = None
+                time_shape = None
+                y_shape = None
+                metadata = None
+                
+                for house in all_house_data_filepaths.values():
+                    
+                    if appliance not in house: continue
+                    paths = house[appliance][split]
+                    X_p = np.load(paths['X_p'], mmap_mode='r')
+                    X_time = np.load(paths['X_time'], mmap_mode='r')
+                    Y_p = np.load(paths['Y_p'], mmap_mode='r')
+                    total_samples += X_p.shape[0]
+                    
+                    if p_shape is None:
+                        p_shape = X_p.shape[1:]
+                        time_shape = X_time.shape[1:]
+                        y_shape = Y_p.shape[1:]
+                        
+                        with open(paths['metadata'], 'rb') as f: 
+                            metadata = pickle.load(f)
+                            
+                if total_samples ==0: continue
+            
+                # Allocate output memmaps
+                split_dir = os.path.join(appliance_dir, split)
+                os.makedirs(split_dir, exist_ok=True)
+                X_p_path = os.path.join(split_dir, 'X_p.npy')
+                X_time_path = os.path.join(split_dir, 'X_time.npy')
+                Y_p_path = os.path.join(split_dir, 'Y_p.npy')
+                
+                X_p_out = np.lib.format.open_memmap(
+                    X_p_path,
+                    mode='w+',
+                    dtype=np.float32,
+                    shape=(total_samples, *p_shape))
+                
+                X_time_out = np.lib.format.open_memmap(
+                    X_time_path,
+                    mode='w+',
+                    dtype=np.float32,
+                    shape=(total_samples, *time_shape))
+                
+                Y_p_out = np.lib.format.open_memmap(
+                    Y_p_path,
+                    mode='w+',
+                    dtype=np.float32,
+                    shape=(total_samples, *y_shape))
+                
+                # Pass 2: Copy one house at a time
+                
+                # Accumulated metadata
+                total_timesteps = 0
+                total_samples = 0
+                total_preprocessing_time = 0
+                X_p_size_MB = 0
+                X_time_size_MB = 0
+                Y_p_size_MB = 0
+                total_dataset_size_MB = 0
+                peak_RAM_list = []
+                
+                start = 0
+                for house in all_house_data_filepaths.values():
+                    if appliance not in house: continue
+                
+                    paths = house[appliance][split]
+                    X_p = np.load(paths['X_p'], mmap_mode='r')
+                    X_time = np.load(paths['X_time'], mmap_mode='r')
+                    Y_p = np.load(paths['Y_p'], mmap_mode='r')
+                    end = start + X_p.shape[0]
+                    
+                    X_p_out[start:end] = X_p
+                    X_time_out[start:end] = X_time
+                    Y_p_out[start:end] = Y_p
+                    start = end
+                    
+                    # Accumulate metadata values
+                    with open(paths['metadata'], 'rb') as f: metadata = pickle.load(f)
+                    total_timesteps += metadata['dataset']['num_timesteps']
+                    total_samples += metadata['dataset']['num_samples']
+                    total_preprocessing_time += metadata['timing']['preprocessing_seconds']
+                    X_p_size_MB += metadata['computation']['X_p_size_MB']
+                    X_time_size_MB += metadata['computation']['X_time_size_MB']
+                    Y_p_size_MB += metadata['computation']['Y_p_size_MB']
+                    total_dataset_size_MB += metadata['computation']['total_dataset_size_MB']
+                    peak_RAM_list.append(metadata['computation']['process_RAM_MB'])
+                    
+                X_p_out.flush()
+                X_time_out.flush()
+                Y_p_out.flush()
+                
+                # Save metadata
+                metadata['dataset']['num_timesteps'] = total_timesteps
+                metadata['dataset']['num_samples'] = total_samples
+                metadata['timing']['preprocessing_seconds'] = total_preprocessing_time
+                metadata['timing']['samples_per_second'] = (total_samples / total_preprocessing_time)
+                metadata['computation']['X_p_size_MB'] = X_p_size_MB
+                metadata['computation']['X_time_size_MB'] = X_time_size_MB
+                metadata['computation']['Y_p_size_MB'] = Y_p_size_MB
+                metadata['computation']['total_dataset_size_MB'] = total_dataset_size_MB
+                metadata['computation']['peak_RAM_MB'] = max(peak_RAM_list)
+                metadata_path = os.path.join(split_dir, 'metadata.pkl')
+                with open(metadata_path, 'wb') as f: pickle.dump(metadata, f)
+                
+                centralized_filepaths[appliance][split] = {
+                    'X_p': X_p_path,
+                    'X_time': X_time_path,
+                    'Y_p': Y_p_path,
+                    'metadata': metadata_path}
+                
+        # Save centralized filepath directory
+        filepath_dict = os.path.join(output_folder, 'processed_data_filepaths.pkl')
+        with open(filepath_dict, 'wb') as f: pickle.dump(centralized_filepaths, f)
+        return centralized_filepaths
     
+    
+    all_house_data_filepaths_filepath = os.path.join(data_dir, 'ukdale_processed', 'all_filepaths.pkl')
+    with open(all_house_data_filepaths_filepath, 'rb') as f: all_house_data_filepaths = pickle.load(f)
+    
+    output_folder = os.path.join(data_dir, 'ukdale_processed', 'centralized')
+    os.makedirs(output_folder, exist_ok=True)
+    centralized_filepaths = centralize_data(all_house_data_filepaths, output_folder)
+        
     # Load pre-processed dataset filepaths
     with open(processed_data_filepaths_dict_save_filepath, 'rb') as f:
         processed_data_filepaths = pickle.load(f)
