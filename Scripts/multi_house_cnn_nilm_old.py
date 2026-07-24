@@ -34,6 +34,10 @@ window_length, stride = 30, 1
 epochs = 20
 batch_size = 32
 
+# Potential Bug:
+# Each house is normalized independently before normalization
+# 
+
 def get_model_info(model, model_filepath, model_name):
     return {
         "name": model_name,
@@ -643,6 +647,12 @@ if __name__ == '__main__':
                 y_shape = None
                 metadata = None
                 
+                # Global Normalization
+                global_x_min = np.inf
+                global_x_max = -np.inf
+                global_y_min = np.inf
+                global_y_max = -np.inf
+                
                 for house in all_house_data_filepaths.values():
                     
                     if appliance not in house: continue
@@ -657,8 +667,17 @@ if __name__ == '__main__':
                         time_shape = X_time.shape[1:]
                         y_shape = Y_p.shape[1:]
                         
-                        with open(paths['metadata'], 'rb') as f: 
-                            metadata = pickle.load(f)
+                    with open(paths['metadata'], 'rb') as f: 
+                        metadata = pickle.load(f)
+                        
+                    norm = metadata['normalization']
+                    global_x_min = min(global_x_min, norm['x_min'])
+                    global_x_max = max(global_x_max, norm['x_max'])
+                    global_y_min = min(global_y_min, norm['y_min'])
+                    global_y_max = max(global_y_max, norm['y_max'])
+                    
+                global_x_range = max(global_x_max - global_x_min, 1e-12)
+                global_y_range = np.maximum(global_y_max - global_y_min, 1e-12)
                             
                 if total_samples ==0: continue
             
@@ -725,11 +744,37 @@ if __name__ == '__main__':
                     total_dataset_size_MB += metadata['computation']['total_dataset_size_MB']
                     peak_RAM_list.append(metadata['computation']['process_RAM_MB'])
                     
+                    with open(paths['metadata'], 'rb') as f: meta = pickle.load(f)
+                    norm = meta['normalization']
+                    house_x_min = norm['x_min']
+                    house_x_max = norm['x_max']
+                    house_y_min = norm['y_min']
+                    house_y_max = norm['y_max']
+                    
+                    house_x_range = max(house_x_max - house_x_min, 1e-12)
+                    house_y_range = np.maximum(house_y_max - house_y_min, 1e-12)
+                    
+                    # Undo Normalization
+                    X_p = X_p.astype(np.float32, copy=True)
+                    Y_p = Y_p.astype(np.float32, copy=True)
+                    X_p = X_p * house_x_range + house_x_min
+                    Y_p = Y_p * house_y_range + house_y_min
+                    
+                    # Apply global normalization
+                    X_p = (X_p - global_x_min) / global_x_range
+                    Y_p = (Y_p - global_y_min) / global_y_range
+                    
                 X_p_out.flush()
                 X_time_out.flush()
                 Y_p_out.flush()
                 
-                # Save metadata
+                # Save Metadata
+                metadata['normalization'] = {
+                    'x_min': global_x_min,
+                    'x_max': global_x_max,
+                    'y_min': global_y_min,
+                    'y_max': global_y_max}
+                
                 metadata['dataset']['num_timesteps'] = total_timesteps
                 metadata['dataset']['num_samples'] = total_samples
                 metadata['timing']['preprocessing_seconds'] = total_preprocessing_time
@@ -760,15 +805,17 @@ if __name__ == '__main__':
     output_folder = os.path.join(data_dir, 'ukdale_processed', 'centralized')
     os.makedirs(output_folder, exist_ok=True)
     centralized_filepaths = centralize_data(all_house_data_filepaths, output_folder)
+    
+    directory_dict = os.path.join(output_folder, 'processed_data_filepaths.pkl')
         
     # Load pre-processed dataset filepaths
-    with open(processed_data_filepaths_dict_save_filepath, 'rb') as f:
+    with open(directory_dict, 'rb') as f:
         processed_data_filepaths = pickle.load(f)
         
     appliance_names = list(processed_data_filepaths.keys())
     results = {}
     
-    trained_model_folderpath = os.path.join(results_dir, 'ukdale_1d_cnn_nilm')
+    trained_model_folderpath = os.path.join(results_dir, 'ukdale_centralized_cnn_nilm')
     os.makedirs(trained_model_folderpath, exist_ok=True)
     
     for target_appliance in tqdm(appliance_names, desc='Appliances'):
