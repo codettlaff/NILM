@@ -36,7 +36,6 @@ batch_size = 32
 
 # Potential Bug:
 # Each house is normalized independently before normalization
-# 
 
 def get_model_info(model, model_filepath, model_name):
     return {
