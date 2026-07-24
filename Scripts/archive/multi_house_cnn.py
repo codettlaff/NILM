@@ -484,7 +484,6 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
             patience_counter += 1 
             if patience_counter >= patience: break 
         
-    total_training_time = time.perf_counter() - training_start
     model.save(model_filepath)
     
     # Metadata
@@ -494,3 +493,58 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
     metadata_filepath = (os.path.splitext(model_filepath)[0] + '_metadata.pkl')
     with open(metadata_filepath, 'wb') as f: pickle.dump(metadata, f)
     return model_filepath, metadata_filepath
+
+def test_model(model, processed_testing_data, batch_size, show=False, save_folderpath=None, model_metadata_filepath=None):
+    inference_start = time.perf_counter()
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info().rss
+    
+    y_min = processed_testing_data['normalization']['y_min']
+    y_max = processed_testing_data['normalization']['y_max']
+    n_samples = len(processed_testing_data['Y_p'])
+    
+    y_true_all = []
+    y_pred_all = []
+    
+    # Inference
+    for i in range(0, n_samples, batch_size):
+        batch_idx = np.arange(i, min(i + batch_size, n_samples))
+        (X_p, X_time), y_true = generate_batch(processed_testing_data, batch_idx)
+        y_pred = model.predict_on_batch([X_p, X_time])
+        peak_ram = max(peak_ram, process.memory_info().rss)
+        y_true_all.append(y_true)
+        y_pred_all.append(y_pred)
+        
+    inference_time = (time.perf_counter() - inference_start)
+    y_true = np.vstack(y_true_all)
+    y_pred = np.vstack(y_pred_all)
+    
+    # Metrics (normalized)
+    mse_norm = np.mean((y_pred - y_true) ** 2)
+    rmse_norm = np.sqrt(mse_norm)
+    
+    # Convert back to watts
+    y_true_denorm = y_true * (y_max - y_min) + y_min
+    y_pred_denorm = y_pred * (y_max - y_min) + y_min
+    
+    mse_denorm = np.mean((y_pred_denorm - y_true_denorm) ** 2)
+    rmse_denorm = np.sqrt(mse_denorm)
+    abs_error = np.abs(y_pred_denorm - y_true_denorm)
+    mae = np.mean(abs_error)
+    eacc = (1.0 - np.sum(abs_error) / (2.0 * np.sum(y_true_denorm)))
+    
+    results_metadata = get_results_metadata(inference_time, peak_ram, mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc)
+    if model_metadata_filepath:
+        with open(model_metadata_filepath, 'rb') as f: model_metadata = pickle.load(f)
+        model_metadata['testing_results_metadata'] = results_metadata
+        with open(model_metadata_filepath, 'wb') as f: pickle.dump(model_metadata)
+    
+    if save_folderpath:
+        os.makedirs(save_folderpath, exist_ok=True)
+        results_filepath = os.path.join(save_folderpath, 'results.npz')
+        np.savez(results_filepath, y_true=y_true_denorm, y_pred=y_pred_denorm)
+        metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
+        with open(metadata_filepath, 'wb') as f: pickle.dump(results_metadata, f)
+        
+    return y_true_denorm, y_pred_denorm, results_metadata
+    
