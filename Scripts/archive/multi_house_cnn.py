@@ -547,4 +547,39 @@ def test_model(model, processed_testing_data, batch_size, show=False, save_folde
         with open(metadata_filepath, 'wb') as f: pickle.dump(results_metadata, f)
         
     return y_true_denorm, y_pred_denorm, results_metadata
+
+def preprocess_house_data(ukdale_house_filepath, T_limit, target_appliances, window_length, stride, train_val_test_split, save_folderpath):
+    data = load_data(ukdale_house_filepath, T_limit=T_limit)
+    data = filter_by_appliance(data, target_appliances)
+    idx_dict = precompute_indices(
+        num_timesteps=len(data['X']),
+        window_length=window_length,
+        stride=stride,
+        train_val_test_split=train_val_test_split,
+        number_blocks=42)
     
+    os.makedirs(save_folderpath, exist_ok=True)
+    directory_dict = {}
+    for target_appliance in data['appliance_names']:
+        target_data = filter_by_appliance(data, [target_appliance])
+        target_data_folderpath = os.path.join(save_folderpath, target_appliance)
+        os.makedirs(target_data_folderpath, exist_ok = True)
+        target_data_base_filepath = os.path.join(target_data_folderpath, target_appliance)
+        target_directory_dict = prepare_data(target_data, idx_dict, window_length, stride, target_data_base_filepath)
+        directory_dict[target_appliance] = target_directory_dict
+    
+    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    with open(directory_dict_filepath, 'wb') as f: pickle.dump(f)
+    return directory_dict
+
+def preprocess_houses(ukdale_filepath_list, T_limit, target_appliances, window_length, stride, train_val_test_split, save_folderpath):
+    os.makedirs(save_folderpath, exist_ok=True)
+    directory_dict = {}
+    for filepath in ukdale_filepath_list:
+        house_name = os.path.basename(filepath)
+        house_folderpath = os.path.join(save_folderpath, house_name)
+        os.makedirs(house_folderpath, exist_ok=True)
+        house_directory_dict = preprocess_house_data(filepath, T_limit, target_appliances, window_length, stride, train_val_test_split, house_folderpath)
+        directory_dict[house_name] = house_directory_dict
+    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    with open(directory_dict_filepath, 'wb') as f: pickle.dump(f)
