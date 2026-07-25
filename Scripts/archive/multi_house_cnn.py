@@ -80,10 +80,11 @@ def get_training_info(n_train, n_val, batch_size, epochs_requested, epochs_compl
         'slowest_epoch_training_time_seconds': float(np.max(epoch_times)),
         'peak_RAM_MB': peak_ram / 1024**2}
 
-def get_dataset_metadata(dataset_name, input_labels, output_labels, window_length, stride, normalization_factors, total_timesteps, timesteps_used, num_blocks, timesteps_discarded, train_val_test_split, training_dataset_metadata, validation_dataset_metadata, testing_dataset_metadata):
+def get_dataset_metadata(dataset_name, input_labels, output_labels, window_length, stride, normalization_factors, total_timesteps, timesteps_used, num_blocks, num_samples, train_val_test_split, training_dataset_metadata, validation_dataset_metadata, testing_dataset_metadata, num_houses=1):
     return{
     'metadata_name': f'Dataset: {dataset_name}',
     'dataset_name': dataset_name,
+    'num_houses': num_houses,
     'input_labels': input_labels,
     'output_labels': output_labels,
     'window_length': window_length,
@@ -92,7 +93,8 @@ def get_dataset_metadata(dataset_name, input_labels, output_labels, window_lengt
     'total_timesteps': total_timesteps,
     'num_timesteps_used': timesteps_used,
     'num_blocks': num_blocks,
-    'num_timesteps_discarded': timesteps_discarded,
+    'num_timesteps_discarded': total_timesteps - timesteps_used,
+    'num_samples': num_samples,
     'training_split_fraction': train_val_test_split[0],
     'validation_split_fraction': train_val_test_split[1],
     'testing_split_fraction': train_val_test_split[2],
@@ -371,8 +373,8 @@ def prepare_data(data, idx_dict, window_length, stride, dataset_folderpath):
         
     # Save Dataset Metadata
     dataset_name = os.path.basename(dataset_folderpath)
-    timesteps_discarded = n_timesteps - timesteps_used
-    metadata = get_dataset_metadata(dataset_name, in_labels, out_labels, window_length, stride, data['normalization_factors'], n_timesteps, timesteps_used, idx_dict['num_blocks'], timesteps_discarded, train_val_test_split, metadata_dict['train'], metadata_dict['val'], metadata_dict['test'])
+    num_samples = metadata_dict['train']['num_samples'] + metadata_dict['val']['num_samples'] + metadata_dict['test']['num_samples']
+    metadata = get_dataset_metadata(dataset_name, in_labels, out_labels, window_length, stride, data['normalization_factors'], n_timesteps, timesteps_used, idx_dict['num_blocks'], num_samples, train_val_test_split, metadata_dict['train'], metadata_dict['val'], metadata_dict['test'])
     metadata_filepath = os.path.join(dataset_folderpath, 'metadata.pkl')
     with open(metadata_filepath, 'wb') as f: pickle.dump(metadata, f)
     
@@ -584,7 +586,7 @@ def preprocess_houses(ukdale_filepath_list, T_limit, target_appliances, window_l
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
     with open(directory_dict_filepath, 'wb') as f: pickle.dump(f)
     
-def centralize_data(inp_directory_dict, save_folderpath):
+def centralize_data(dataset_name, inp_directory_dict, save_folderpath):
     os.makedirs(save_folderpath, exist_ok=True)
     directory_dict = {}
     
@@ -599,6 +601,7 @@ def centralize_data(inp_directory_dict, save_folderpath):
         appliance_dir = os.path.join(save_folderpath, appliance)
         os.makedirs(appliance_dir, exist_ok=True)
         
+        split_info_dict = {}
         for split in ['train', 'val', 'test']:
             
             # Pass 1: Determine total Size
@@ -667,34 +670,55 @@ def centralize_data(inp_directory_dict, save_folderpath):
             
             # Pass 2: Copy one house at a time
             
-            # Accumulated Metadata
-            total_timesteps = 0
-            total_samples = 0
-            total_preprocessing_time = 0
-            X_p_size_MB = 0
-            X_time_size_MB = 0
-            Y_p_size_MB = 0
-            total_dataset_size_MB = 0
-            peak_RAM_list = []
+            # Prepare Metadata Variables for this Split
+            num_timesteps = 0
+            num_samples = 0
+            preprocessing_time = 0.0
+            preprocessing_peak_ram_list = []
+            dataset_size = (X_p.nbytes + X_time.nbytes + Y_p.nbytes) / 1024**2
             
             start = 0
             for house in inp_directory_dict.keys():
                 if appliance not in house.keys(): continue
-                    paths = house[appliance][split]
-                    X_p = np.load(paths['X_p'], mmap_mode='r')
-                    X_time = np.load(paths['X_time'], mmap_mode='r')
-                    Y_p = np.load(paths['Y_p'], mmap_mode='r')
-                    end = start + X_p.shape[0]
-                    
-                    X_p_out[start:end] = X_p
-                    X_time_out[start:end] = X_time
-                    Y_p_out[start:end] = Y_p
-                    start = end
-                    
-                    # Accumulate Metadata Values
-                    with open(paths['metadata'], 'rb') as f: metadata = pickle.load(f)
-                    total_timesteps += metadata['num_timesteps']
-                    total_samples += metadata['num_timesteps_used']
-                    total_preprocessing_time += metadata['total_preprocessing_time']
-                    total_dataset_size_MB += metadata[dataset_split_name]['dataset_size_MB'] # TO DO: Fix This Line
-                    peak_RAM_list.append(metadata['computation']['process_RAM_MB'])
+                paths = house[appliance][split]
+                X_p = np.load(paths['X_p'], mmap_mode='r')
+                X_time = np.load(paths['X_time'], mmap_mode='r')
+                Y_p = np.load(paths['Y_p'], mmap_mode='r')
+                end = start + X_p.shape[0]
+                
+                X_p_out[start:end] = X_p
+                X_time_out[start:end] = X_time
+                Y_p_out[start:end] = Y_p
+                start = end
+                
+                switch = {
+                    'train': 'training_dataset_metadata',
+                     'val': 'validation_dataset_metadata',
+                     'test': 'testing_dataset_metadata'}
+                
+                # Load House Metadata
+                inp_house_metadata_filepath = inp_directory_dict[house][appliance]
+                with open(inp_house_metadata_filepath, 'rb') as f: house_metadata = pickle.load(inp_house_metadata_filepath)
+                house_split_info = house_metadata[switch[split]]
+                num_timesteps += house_split_info['num_timesteps']
+                num_samples += house_split_info['num_samples']
+                preprocessing_time += house_split_info['preprocessing_time']
+                preprocessing_peak_ram_list.append['preprocessing_peak_RAM_MB']
+                
+            preprocessing_peak_ram = max(preprocessing_peak_ram_list)
+            # split_info_dict[split] = get_dataset_split_info(split, num_timesteps, num_samples, window_length, stride, preprocessing_time, preprocessing_peak_ram, dataset_size)
+            
+        # Out Metadata
+        appliance_dataset_name = f('{dataset_name}_{appliance}')
+        num_houses = len(inp_directory_dict.keys())
+        input_labels = house_metadata['input_labels']
+        output_labels = house_metadata['output_labels']
+        window_length = house_metadata['window_length']
+        stride = house_metadata['stride']
+                
+    
+    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    with open(directory_dict_filepath) as f: pickle.dump(f)
+    return directory_dict
+                
+                
