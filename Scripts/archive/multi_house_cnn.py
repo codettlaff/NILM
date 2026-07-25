@@ -586,139 +586,125 @@ def preprocess_houses(ukdale_filepath_list, T_limit, target_appliances, window_l
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
     with open(directory_dict_filepath, 'wb') as f: pickle.dump(f)
     
+def concatenate_datasets(dataset_filepath_list):
+    datasets = [np.load(filepath) for filepath in dataset_filepath_list]
+    return np.concatenate(datasets, axis=0)
+
+def make_filepath_list(directory_dict):
+    
+    splits = ('train', 'val', 'test')
+    fields = ('input_labels', 'output_labels', 'window_length', 'stride')
+    X_p_list, X_time_list, Y_list, metadata_dict = {}, {}, {}, {}
+    
+    for house, house_dict in directory_dict.items():
+        for appliance, appliance_dict in house_dict.items():
+            with open(appliance_dict['metadata'], 'rb') as f:
+                metadata = pickle.load(f)
+                
+            # First occurance of this appliance.
+            if appliance not in metadata_dict:
+                metadata_dict[appliance] = metadata
+                X_p_list[appliance] = {split: [] for split in splits}
+                X_time_list[appliance] = {split: [] for split in splits}
+                Y_list[appliance] = {split: [] for split in splits}
+                
+            # Verify shares metadata matches previous homes.
+            else:
+                reference = metadata_dict[appliance][0]
+                if any(metadata[field] != reference[field] for field in fields):
+                    print(f"Skipping house '{house}' for appliance '{appliance}': metadata mismatch.")
+                    continue
+                metadata_dict[appliance].append(metadata)
+            
+            # Append filepaths
+            for split in splits:
+                X_p_list[appliance][split].append(appliance_dict[split]['X_p'])
+                X_time_list[appliance][split].append(appliance_dict[split]['X_time'])
+                Y_list[appliance][split].append(appliance_dict[split]['Y'])
+    
+    return X_p_list, X_time_list, Y_list, metadata_dict
+
 def centralize_data(dataset_name, inp_directory_dict, save_folderpath):
-    os.makedirs(save_folderpath, exist_ok=True)
+    
+    X_p_lists, X_time_lists, Y_lists, metadata_dict = make_filepath_list(inp_directory_dict)
+    splits = ('train', 'val', 'test')
+    
+    # Create Output Directories
     directory_dict = {}
-    
-    # All Appliances that Appear in at Leat One House
-    appliances = sorted({
-        appliance
-        for house in inp_directory_dict.values()
-        for appliance in house.keys()})
-    
-    for appliance in appliances:
-        directory_dict[appliance] = {}
-        appliance_dir = os.path.join(save_folderpath, appliance)
-        os.makedirs(appliance_dir, exist_ok=True)
-        
-        split_info_dict = {}
-        for split in ['train', 'val', 'test']:
-            
-            # Pass 1: Determine total Size
-            total_samples = 0
-            p_shape = None
-            time_shape = None
-            y_shape = None
-            metadata = None
-            
-            # Global Normalization
-            global_x_min = np.inf
-            global_x_max = -np.inf
-            global_y_min = np.inf
-            global_y_max = -np.inf
-            
-            for house in inp_directory_dict.keys():
-                if appliance not in house.keys(): continue
-                paths = house[appliance][split]
-                X_p = np.load(paths['X_p'], mmap_mode='r')
-                X_time = np.load(paths['X_time'], mmap_mode='r')
-                Y_p = np.load(paths['Y_p'], mmap_mode='r')
-                total_samples += X_p.shape[0]
-                
-                if p_shape is None:
-                    p_shape = X_p.shape[1:]
-                    time_shape = X_time.shape[1:]
-                    y_shape = Y_p.shape[1:]
-                    
-                with open(paths['metadata'], 'rb') as f: metadata = pickle.load(f)
-                
-                norm = metadata['normalization_factors']
-                global_x_min = min(global_x_min, norm['x_min'])
-                global_x_max = max(global_x_max, norm['x_max'])
-                global_y_min = min(global_y_min, norm['y_min'])
-                global_y_max = max(global_y_max, norm['y_max'])
-                
-            global_x_range = max(global_x_max - global_x_min, 1e-12)
-            global_y_range = np.maximum(global_y_max - global_y_min, 1e-12)
-            
-            if total_samples == 0 : continue
-            
-            # Allocate Output memmaps
-            split_dir = os.path.join(appliance_dir, split)
+    for appliance in metadata_dict:
+        directory_dict[appliance] = {'metadata': os.path.join(save_folderpath, appliance, 'metadata.pkl')}
+        os.makedirs(os.path.join(save_folderpath, appliance), exist_ok=True)
+        for split in splits:
+            split_dir = os.path.join(save_folderpath, appliance, split)
             os.makedirs(split_dir, exist_ok=True)
-            X_p_path = os.path.join(split_dir, 'X_p.npy')
-            X_time_path = os.path.join(split_dir, 'X_time.npy')
-            Y_p_path = os.path.join(split_dir, 'Y_p.npy')
-            
-            X_p_out = np.lib.format.open_memmap(
-                X_p_path,
-                mode='w+',
-                dtype=np.float32,
-                shape=(total_samples, *p_shape))
-            
-            X_time_out = np.lib.format.open_memmap(
-                X_time_path,
-                mode='w+',
-                dtype=np.float32,
-                shape=(total_samples, *time_shape))
-            
-            Y_p_out = np.lib.format.open_memmap(
-                Y_p_path,
-                mode='w+',
-                dtype=np.float32,
-                shape=(total_samples, *y_shape))
-            
-            # Pass 2: Copy one house at a time
-            
-            # Prepare Metadata Variables for this Split
+            directory_dict[appliance][split] = {
+                'X_p': os.path.join(split_dir, 'X_p.npy'),
+                'X_time': os.path.join(split_dir, 'X_time.npy'),
+                'Y': os.path.join(split_dir, 'Y.npy')}
+    
+    # Concatenate and save datasets.
+    for name, file_lists in {
+            'X_p': X_p_lists,
+            'X_time': X_time_lists,
+            'Y': Y_lists}.items():
+        for appliance, split_dict in file_lists.items():
+            for split, filepath_list in split_dict.items():
+                np.save(
+                    directory_dict[appliance][split][name],
+                    concatenate_datasets(filepath_list))
+                
+    # Build Metadata 
+    switch = {
+        'train': 'training_dataset_metadata',
+        'val': 'validation_dataset_metadata',
+        'test': 'testing_dataset_metadata'}
+    
+    for appliance, metadata_list in metadata_dict.items():
+        reference = metadata_list[0]
+        split_metadata = {}
+        normalization = reference['normalization_factors'].copy()
+        for split in splits:
             num_timesteps = 0
             num_samples = 0
             preprocessing_time = 0.0
-            preprocessing_peak_ram_list = []
-            dataset_size = (X_p.nbytes + X_time.nbytes + Y_p.nbytes) / 1024**2
+            preprocessing_peak_ram = 0.0
+            dataset_size = 0.0
+            for metadata in metadata_list:
+                info = metadata[switch[split]]
+                num_timesteps += info['num_timesteps']
+                num_samples += info['num_samples']
+                preprocessing_time += info[preprocessing_time]
+                preprocessing_peak_ram = max(preprocessing_peak_ram, info['preprocessing_peak_RAM_MB'])
+                dataset_size += info['size_MB']
+                nf = info['normalization_factors']
+                normalization["x_min"] = min(normalization["x_min"], nf["x_min"])
+                normalization["x_max"] = max(normalization["x_max"], nf["x_max"])
+                normalization["y_min"] = min(normalization["y_min"], nf["y_min"])
+                normalization["y_max"] = max(normalization["y_max"], nf["y_max"])
             
-            start = 0
-            for house in inp_directory_dict.keys():
-                if appliance not in house.keys(): continue
-                paths = house[appliance][split]
-                X_p = np.load(paths['X_p'], mmap_mode='r')
-                X_time = np.load(paths['X_time'], mmap_mode='r')
-                Y_p = np.load(paths['Y_p'], mmap_mode='r')
-                end = start + X_p.shape[0]
-                
-                X_p_out[start:end] = X_p
-                X_time_out[start:end] = X_time
-                Y_p_out[start:end] = Y_p
-                start = end
-                
-                switch = {
-                    'train': 'training_dataset_metadata',
-                     'val': 'validation_dataset_metadata',
-                     'test': 'testing_dataset_metadata'}
-                
-                # Load House Metadata
-                inp_house_metadata_filepath = inp_directory_dict[house][appliance]
-                with open(inp_house_metadata_filepath, 'rb') as f: house_metadata = pickle.load(inp_house_metadata_filepath)
-                house_split_info = house_metadata[switch[split]]
-                num_timesteps += house_split_info['num_timesteps']
-                num_samples += house_split_info['num_samples']
-                preprocessing_time += house_split_info['preprocessing_time']
-                preprocessing_peak_ram_list.append['preprocessing_peak_RAM_MB']
-                
-            preprocessing_peak_ram = max(preprocessing_peak_ram_list)
-            # split_info_dict[split] = get_dataset_split_info(split, num_timesteps, num_samples, window_length, stride, preprocessing_time, preprocessing_peak_ram, dataset_size)
+            split_metadata[split] = get_dataset_split_info(
+                split=split,
+                num_timesteps=num_timesteps,
+                num_samples=num_samples,
+                window_length=reference['window_length'],
+                stride=reference['stride'],
+                preprocessing_time=preprocessing_time,
+                preprocessing_peak_ram=preprocessing_peak_ram,
+                dataset_size=dataset_size)
             
-        # Out Metadata
-        appliance_dataset_name = f('{dataset_name}_{appliance}')
-        num_houses = len(inp_directory_dict.keys())
-        input_labels = house_metadata['input_labels']
-        output_labels = house_metadata['output_labels']
-        window_length = house_metadata['window_length']
-        stride = house_metadata['stride']
-                
-    
-    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
-    with open(directory_dict_filepath) as f: pickle.dump(f)
+        metadata_out = get_dataset_metadata(
+            dataset_name=f'{dataset_name}_{appliance}',
+            input_labels=reference['input_labels'],
+            output_labels=reference['output_labels'],
+            window_length=reference['window_length'],
+            stride=reference['stride'],
+            normalization_factors=normalization,
+            training_dataset_metadata=split_metadata['train'],
+            validation_dataset_metadata=split_metadata['val'],
+            testing_dataset_metadata=split_metadata['test'])
+        
+        with open(directory_dict[appliance]['metadata'], 'wb') as f:
+            pickle.dump(metadata_out, f)
+            
     return directory_dict
-                
                 
