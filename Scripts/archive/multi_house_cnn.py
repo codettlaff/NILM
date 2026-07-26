@@ -33,6 +33,8 @@ T_limit = 172800 # Two Days
 train_val_test_split = [0.7, 0.15, 0.15]
 window_length = 300 # 5 Minutes
 stride = 100
+epochs = 20
+batch_size = 32
 
 def get_dataset_split_info(split_name, num_timesteps, num_samples, window_length, stride, preprocessing_time, preprocessing_peak_ram, dataset_size_MB):
     return{
@@ -496,18 +498,21 @@ def train_model(model, processed_training_data, processed_val_data, epochs, batc
     with open(metadata_filepath, 'wb') as f: pickle.dump(metadata, f)
     return model_filepath, metadata_filepath
 
-def test_model(model, processed_testing_data, batch_size, show=False, save_folderpath=None, model_metadata_filepath=None):
+def test_model(model_directory_dict, dataset_metadata, batch_size, show=False):
+    
+    model_filepath = model_directory_dict['model']
+    model = load_model(model_filepath)
+    
     inference_start = time.perf_counter()
     process = psutil.Process(os.getpid())
-    peak_ram = process.memory_info().rss
     
-    y_min = processed_testing_data['normalization']['y_min']
-    y_max = processed_testing_data['normalization']['y_max']
-    n_samples = len(processed_testing_data['Y_p'])
+    y_min = dataset_metadata['normalizaton']['y_min']
+    y_max = dataset_metadata['normalization']['y_man']
+    n_samples = dataset_metadata['testing_dataset_split']['num_samples']
     
-    y_true_all = []
-    y_pred_all = []
-    
+    y_true_all, y_pred_all = [], []
+
+    peak_ram = 0.0
     # Inference
     for i in range(0, n_samples, batch_size):
         batch_idx = np.arange(i, min(i + batch_size, n_samples))
@@ -520,7 +525,7 @@ def test_model(model, processed_testing_data, batch_size, show=False, save_folde
     inference_time = (time.perf_counter() - inference_start)
     y_true = np.vstack(y_true_all)
     y_pred = np.vstack(y_pred_all)
-    
+        
     # Metrics (normalized)
     mse_norm = np.mean((y_pred - y_true) ** 2)
     rmse_norm = np.sqrt(mse_norm)
@@ -535,24 +540,33 @@ def test_model(model, processed_testing_data, batch_size, show=False, save_folde
     mae = np.mean(abs_error)
     eacc = (1.0 - np.sum(abs_error) / (2.0 * np.sum(y_true_denorm)))
     
-    results_metadata = get_results_metadata(inference_time, peak_ram, mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc)
-    if model_metadata_filepath:
-        with open(model_metadata_filepath, 'rb') as f: model_metadata = pickle.load(f)
-        model_metadata['testing_results_metadata'] = results_metadata
-        with open(model_metadata_filepath, 'wb') as f: pickle.dump(model_metadata)
+    results_dict = get_results_metadata(inference_time, peak_ram, mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc)
+    results_dict = {
+        'mse': mse_denorm,
+        'rmse': rmse_denorm,
+        'mse_norm': mse_norm,
+        'rmse_norm': rmse_norm,
+        'mae': mae,
+        'eacc': eacc}
     
-    if save_folderpath:
-        os.makedirs(save_folderpath, exist_ok=True)
-        results_filepath = os.path.join(save_folderpath, 'results.npz')
-        np.savez(results_filepath, y_true=y_true_denorm, y_pred=y_pred_denorm)
-        metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
-        with open(metadata_filepath, 'wb') as f: pickle.dump(results_metadata, f)
-        
-    return y_true_denorm, y_pred_denorm, results_metadata
+    # Save Results
+    results_filepath = os.path.join(os.bath.base_dir(model_directory_dict['model']), 'test_results.npz')
+    np.savez(results_filepath, y_true=y_true_denorm, y_pred=y_pred_denorm)
+    model_directory_dict['npy_results'] = results_filepath
+    results_filepath = os.path.join(os.bath.base_dir(model_directory_dict['model']), 'test_results.pkl')
+    with open(results_filepath, 'wb') as f: pickle.dump(f)
+    model_directory_dict['pkl_results'] = results_filepath
+    
+    model_metadata_filepath = model_directory_dict['metadata']
+    with open(model_metadata_filepath, 'rb') as f: model_metadata = pickle.load(f)
+    model_metadata['inference_time'] = inference_time
+    model_metadata['inference_peak_RAM_MB'] = peak_ram / 1024**2
+    
+    return model_directory_dict
 
-def preprocess_house_data(ukdale_house_filepath, T_limit, target_appliances, window_length, stride, train_val_test_split, save_folderpath):
+def preprocess_house_data(ukdale_house_filepath, window_length, stride, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
     data = load_data(ukdale_house_filepath, T_limit=T_limit)
-    data = filter_by_appliance(data, target_appliances)
+    if target_appliances: data = filter_by_appliance(data, target_appliances)
     idx_dict = precompute_indices(
         num_timesteps=len(data['X']),
         window_length=window_length,
@@ -572,19 +586,20 @@ def preprocess_house_data(ukdale_house_filepath, T_limit, target_appliances, win
     
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
     with open(directory_dict_filepath, 'wb') as f: pickle.dump(f)
-    return directory_dict
+    return directory_dict, directory_dict_filepath
 
-def preprocess_houses(ukdale_filepath_list, T_limit, target_appliances, window_length, stride, train_val_test_split, save_folderpath):
+def preprocess_houses(ukdale_filepath_list, window_length, stride, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
     os.makedirs(save_folderpath, exist_ok=True)
     directory_dict = {}
     for filepath in ukdale_filepath_list:
         house_name = os.path.basename(filepath)
         house_folderpath = os.path.join(save_folderpath, house_name)
         os.makedirs(house_folderpath, exist_ok=True)
-        house_directory_dict = preprocess_house_data(filepath, T_limit, target_appliances, window_length, stride, train_val_test_split, house_folderpath)
+        house_directory_dict, house_directory_dict_filepath = preprocess_house_data(filepath, window_length, stride, train_val_test_split, house_folderpath, T_limit, target_appliances)
         directory_dict[house_name] = house_directory_dict
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
     with open(directory_dict_filepath, 'wb') as f: pickle.dump(f)
+    return directory_dict, directory_dict_filepath
     
 def concatenate_datasets(dataset_filepath_list):
     datasets = [np.load(filepath) for filepath in dataset_filepath_list]
@@ -707,4 +722,56 @@ def centralize_data(dataset_name, inp_directory_dict, save_folderpath):
             pickle.dump(metadata_out, f)
             
     return directory_dict
+
+def train_all_appliance_models(inp_directory_dict, save_folderpath, model_name, epochs, batch_size):
+    appliance_names = list(inp_directory_dict.keys())
+    directory_dict = {}
+    for appliance in tqdm(appliance_names, desc='Appliances'):
+        appliance_save_folderpath = os.path.join(save_folderpath, appliance)
+        os.makedirs(appliance_save_folderpath, exist_ok=True)
+        train_data = load_processed_data(inp_directory_dict[appliance], 'train')
+        val_data = load_processed_data(inp_directory_dict[appliance], 'val')
+        dataset_metadata_filepath = inp_directory_dict[appliance]['metadata']
+        with open(dataset_metadata_filepath, 'rb') as f: dataset_metadata = pickle.load(f)
+        model = build_model(window_length)
+        model_filepath, metadata_filepath = train_model(model, train_data, val_data, epochs, batch_size, appliance_save_folderpath, dataset_metadata)
+        directory_dict[appliance] = {}
+        directory_dict[appliance]['model'] = model_filepath
+        directory_dict[appliance]['metadata'] = metadata_filepath
+    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    with open(directory_dict_filepath, 'wb') as f: pickle.dump(f)
+    return directory_dict
+
+def test_all_appliance_models(data_directory_dict, model_directory_dict, batch_size):
+    appliance_names = list(model_directory_dict.keys())
+    for appliance in tqdm(appliance_names, desc='Appliances'):
+        dataset_metadata_filepath = data_directory_dict[appliance]['metadata']
+        with open(dataset_metadata_filepath, 'rb') as f: dataset_metadata = pickle.load(f)
+        model_directory_dict = test_model(model_directory_dict[appliance], dataset_metadata, batch_size)
                 
+if __name__ == '__main__':
+    
+    ukdale_filepath_list = [
+        os.path.join(ukdale_folderpath, f)
+        for f in os.listdir(ukdale_folderpath)
+        if f.endswith('.mat')]
+    
+    save_folderpath = os.path.join(data_dir, 'ukdale_processed')
+    os.makedirs(save_folderpath, exist_ok=True)
+    directory_dict, directory_dict_filepath = preprocess_houses(ukdale_filepath_list, window_length, stride, train_val_test_split, save_folderpath, T_limit)
+    
+    dataset_name = 'ukdale_centralized'
+    save_folderpath = os.path.join(data_dir, 'ukdale_centralized')
+    os.makedirs(save_folderpath, exist_ok=True)
+    directory_dict, directory_dict_filepath = centralize_data(dataset_name, directory_dict, save_folderpath)
+    
+    # Load Pre-Processed Dataset Filepaths
+    directory_dict_filepath = os.path.join(data_dir, 'ukdale_centralized', 'directory_dict.pkl')
+    with open(directory_dict_filepath, 'rb') as f: directory_dict = pickle.load(f)
+    
+    model_base_name = 'ukdale_centralized'
+    save_folderpath = os.path.join(results_dir, 'ukdale_centralized')
+    os.makedirs(save_folderpath, exist_ok=True)
+    directory_dict = train_all_appliance_models(directory_dict, save_folderpath, model_base_name, epochs, batch_size)
+    
+    
