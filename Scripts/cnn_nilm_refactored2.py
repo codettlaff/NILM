@@ -116,7 +116,7 @@ def data_metadata(name, input_labels, output_labels, window_length, stride, norm
         'val_split': val_split,
         'test_split': test_split}
 
-def test_results(mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc, inference_time, peak_ram, env):
+def model_performance(mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc, inference_time, peak_ram, env):
     return {
         'mse_norm': mse_norm,
         'rmse_norm': rmse_norm,
@@ -128,7 +128,7 @@ def test_results(mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc, infere
         'inference_peak_RAM_MB': peak_ram / 1024**2,
         'inference_environment': env}
 
-def model_metadata(name, model, data_metadata, train_time_seconds, epochs_requested, epochs_completed, batch_size, train_loss, val_loss, train_peak_ram, size, test_results=None):
+def model_metadata(name, model, data_metadata, train_time_seconds, epochs_requested, epochs_completed, batch_size, train_loss, val_loss, train_peak_ram, size, performance=None):
     metadata = {
         'type': 'model',
         'name': name,
@@ -145,7 +145,7 @@ def model_metadata(name, model, data_metadata, train_time_seconds, epochs_reques
         'val_loss': val_loss,
         'train_peak_RAM_MB': train_peak_ram,
         'size_MB': size / 1024**2}
-    if test_results: metadata['test_results'] = test_results
+    if performance: metadata['performance'] = performance
     return metadata
 
 def print_metadata(metadata_filepath, show=False, txt_filepath=None, overwrite=False):
@@ -530,3 +530,61 @@ def train_model(name, data_directory_dict_filepath, epochs, batch_size, save_fol
     write_pickle(directory_dict, directory_dict_filepath)
     
     return directory_dict_filepath
+
+def test_model(model_directory_dict_filepath, data_directory_dict_filepath):
+    
+    model_directory_dict = read_pickle(model_directory_dict_filepath)
+    data_directory_dict = read_pickle(data_directory_dict_filepath)
+    model_metadata = read_pickle(model_directory_dict['metadata'])
+    model = load_model(model_directory_dict['model'])
+    data_metadata = read_pickle(data_directory_dict['metadata'])
+    test_data = load_processed_data(data_directory_dict, 'test')
+    
+    y_min = data_metadata['normalization_factors']['y_min']
+    y_max = data_metadata['normalization_factors']['y_max']
+    num_test_samples = data_metadata['test_split']['num_samples']
+    batch_size = model_metadata['batch_size']
+    
+    y_true_all, y_pred_all = [], []
+    inference_env = environment_info()
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info().rss
+    inference_start_time = time.perf_counter()
+    
+    # Inference
+    for i in tqdm(range(0, num_test_samples, batch_size), desc='Inference'):
+        batch_idx = np.arange(i, min(i + batch_size, num_test_samples))
+        (X_p, X_time), Y_true = generate_batch(test_data, batch_idx)
+        Y_pred = model.predict_on_batch([X_p, X_time])
+        peak_ram = max(peak_ram, process.memory_info().rss)
+        y_true_all.append(Y_true)
+        y_pred_all.append(Y_pred)
+    inference_time = time.perf_counter() - inference_start_time
+    
+    y_true = np.vstack(y_true_all)
+    y_pred = np.vstack(y_pred_all)
+    
+    # Metrics (Normalized)
+    mse_norm = np.mean((y_pred - y_true)**2)
+    rmse_norm = np.sqrt(mse_norm)
+    
+    # Convert back to Watts
+    y_true_denorm = y_true * (y_max - y_min) + y_min
+    y_pred_denorm = y_pred * (y_max - y_min) + y_min
+    
+    # Metrics
+    mse_denorm = np.mean((y_pred_denorm - y_true_denorm)**2)
+    rmse_denorm = np.sqrt(mse_denorm)
+    abs_error = np.abs(y_pred_denorm - y_true_denorm)
+    mae = np.mean(abs_error)
+    eacc = 1.0 - (np.sum(abs_error) / (2.0 * np.sum(y_true_denorm)))
+    
+    # Save Results
+    results_filepath = os.path.join(os.bath.base_dir(model_directory_dict['model']), 'test_results.npz')
+    np.savez(results_filepath, y_true=y_true_denorm, y_pred=y_pred_denorm)
+    model_directory_dict['npy_results'] = results_filepath
+    write_pickle(model_directory_dict, model_directory_dict_filepath)
+    
+    results = model_performance(mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc, inference_time, peak_ram, inference_env)
+    model_metadata['performance'] = results
+    write_pickle(model_metadata, model_directory_dict['metadata'])
