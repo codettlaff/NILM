@@ -128,7 +128,7 @@ def test_results(mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc, infere
         'inference_peak_RAM_MB': peak_ram / 1024**2,
         'inference_environment': env}
 
-def model_metadata(name, model, train_time_seconds, epochs_requested, epochs_completed, batch_size, train_loss, val_loss, train_peak_ram, size, test_results=None):
+def model_metadata(name, model, data_metadata, train_time_seconds, epochs_requested, epochs_completed, batch_size, train_loss, val_loss, train_peak_ram, size, test_results=None):
     metadata = {
         'type': 'model',
         'name': name,
@@ -410,5 +410,123 @@ def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderp
     # Directory Dict
     directory_dict['metadata'] = metadata_filepath
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    
+    return directory_dict_filepath
+
+def load_processed_data(directory_dict, split):
+    with open(directory_dict['metadata'], 'rb') as f: metadata = pickle.load(f)
+    processed_data_dict = {
+        'X_p': np.load(directory_dict[split]['X_p'], mmap_mode='r'),
+        'X_time': np.load(directory_dict[split]['X_time'], mmap_mode='r'),
+        'Y_p': np.load(directory_dict[split]['Y_p'], mmap_mode='r'),
+        'normalization_factors': metadata['normalization_factors']}
+    return processed_data_dict
+
+def generate_batch(processed_data_dict, idx_list):
+    X_p_batch = processed_data_dict['X_p'][idx_list]
+    X_time_batch = processed_data_dict['X_time'][idx_list]
+    Y_p_batch = processed_data_dict['Y_p'][idx_list]
+    return (X_p_batch, X_time_batch), Y_p_batch
+
+def build_model(window_length):
+    
+    # CNN branch
+    inp_power = layers.Input(shape=(window_length,1), name='power_input')
+    x1 = layers.Conv1D(32, 5, activation='relu', padding='same')(inp_power)
+    x1 = layers.Conv1D(64, 5, activation='relu', padding='same')(x1)
+    x1 = layers.Conv1D(128, 3, activation='relu', padding='same')(x1)
+    x1 = layers.GlobalAveragePooling1D()(x1)
+    
+    # MLP branch
+    inp_time = layers.Input(shape=(2,), name='time_input')
+    x2 = layers.Dense(16, activation='relu')(inp_time)
+    x2 = layers.Dense(64, activation='relu')(x2)
+    
+    # Concatenate
+    x = layers.Concatenate()([x1, x2])
+    x = layers.Dense(128, activation='relu')(x)
+    x = layers.Dense(64, activation='relu')(x)
+    
+    out = layers.Dense(1, name='power_output')(x)
+    model = models.Model(inputs=[inp_power, inp_time], outputs=out)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='mse')
+    return model
+
+def train_model(name, data_directory_dict_filepath, epochs, batch_size, save_folderpath):
+    
+    data_directory_dict = read_pickle(data_directory_dict_filepath)
+    dataset_metadata = read_pickle(data_directory_dict['metadata'])
+    window_length = dataset_metadata['window_length']
+    
+    model = build_model(window_length)
+    train_data = load_processed_data(data_directory_dict, 'train')
+    val_data = load_processed_data(data_directory_dict, 'val')
+    
+    num_samples_train = len(train_data['Y_p'])
+    num_samples_val = len(val_data['Y_p'])
+
+    best_val_loss = np.inf
+    epochs_completed = 0
+    patience = 5
+    patience_counter = 0
+    
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info().rss
+    train_start_time = time.perf_counter()
+    
+    for epoch in tqdm(range(epochs), desc='Epochs'):
+        
+        # Training
+        train_loss = 0.0
+        perm = np.random.permutation(num_samples_train)
+        num_train_batches = 0
+        for i in tqdm(range(0, num_samples_train, batch_size), desc='Training', leave=False):
+            batch_idx = perm[i: i + batch_size]
+            (X_p, X_time), Y_p = generate_batch(train_data, batch_idx)
+            loss = model.train_on_batch([X_p, X_time], Y_p)
+            peak_ram = max(peak_ram, process.memory_info().rss)
+            train_loss += loss
+            num_train_batches += 1
+        train_loss /= num_train_batches
+        
+        # Validation
+        val_loss = 0.0
+        num_val_batches = 0
+        for i in tqdm(range(0, num_samples_val, batch_size), desc='Validation', leave=False):
+            batch_idx = np.arange(i, min(i + batch_size, num_samples_val))
+            (X_p, X_time), Y_p = generate_batch(val_data, batch_idx)
+            loss = model.test_on_batch([X_p, X_time], Y_p)
+            peak_ram = max(peak_ram, process.memory_info().rss)
+            val_loss += loss
+            num_val_batches += 1
+        val_loss /= num_val_batches
+        best_val_loss = min(best_val_loss, val_loss)
+        
+        epochs_completed += 1 
+        
+        # Early Stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+        else: 
+            patience_counter += 1
+            if patience_counter >= patience: break
+        
+    train_time = time.perf_counter() - train_start_time
+    model_filepath = os.path.join(save_folderpath, name + '.keras')
+    model.save(model_filepath)
+    model_size = os.path.getsize(model_filepath)
+    
+    # Model Metadata
+    metadata = model_metadata(name, model, dataset_metadata, train_time, epochs, epochs_completed, batch_size, train_loss, val_loss, peak_ram, model_size)
+    metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
+    write_pickle(metadata, metadata_filepath)
+    
+    # Model Directory Dict
+    directory_dict = {
+        'model': model_filepath,
+        'metadata': metadata_filepath}
+    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    write_pickle(directory_dict, directory_dict_filepath)
     
     return directory_dict_filepath

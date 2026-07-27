@@ -106,7 +106,7 @@ def get_dataset_metadata(dataset_name, input_labels, output_labels, window_lengt
     'total_preprocessing_time': training_dataset_metadata['preprocessing_time'] + validation_dataset_metadata['preprocessing_time'] + testing_dataset_metadata['preprocessing_time'],
     'preprocessing_peak_RAM_MB': max(training_dataset_metadata['peak_RAM_MB'], validation_dataset_metadata['peak_RAM_MB'], testing_dataset_metadata['peak_RAM_MB'])}
 
-def get_results_metadata(inference_time, peak_ram, mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc):
+def get_performance_metadata(inference_time, peak_ram, mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc):
     return {
         'execution_environment': get_environment_info(),
         'inference_time_seconds': inference_time,
