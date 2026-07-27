@@ -128,7 +128,7 @@ def model_performance(mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc, i
         'inference_peak_RAM_MB': peak_ram / 1024**2,
         'inference_environment': env}
 
-def model_metadata(name, model, data_metadata, train_time_seconds, epochs_requested, epochs_completed, batch_size, train_loss, val_loss, train_peak_ram, size, performance=None):
+def model_metadata(name, model, data_metadata, train_env, train_time_seconds, epochs_requested, epochs_completed, batch_size, train_loss, val_loss, train_peak_ram, size, performance=None):
     metadata = {
         'type': 'model',
         'name': name,
@@ -137,6 +137,7 @@ def model_metadata(name, model, data_metadata, train_time_seconds, epochs_reques
         'layer_sequence': [f'{layer.name}: {layer.__class__.__name__} -> {layer.output.shape}' for layer in model.layers],
         'trainable_parameters': model.count_params(),
         'data_metadata': data_metadata,
+        'train_env': train_env,
         'train_time_seconds': train_time_seconds,
         'epochs_requested': epochs_requested,
         'epochs_completed': epochs_completed,
@@ -454,6 +455,8 @@ def build_model(window_length):
 
 def train_model(name, data_directory_dict_filepath, epochs, batch_size, save_folderpath):
     
+    train_env = environment_info()
+    
     data_directory_dict = read_pickle(data_directory_dict_filepath)
     dataset_metadata = read_pickle(data_directory_dict['metadata'])
     window_length = dataset_metadata['window_length']
@@ -518,7 +521,7 @@ def train_model(name, data_directory_dict_filepath, epochs, batch_size, save_fol
     model_size = os.path.getsize(model_filepath)
     
     # Model Metadata
-    metadata = model_metadata(name, model, dataset_metadata, train_time, epochs, epochs_completed, batch_size, train_loss, val_loss, peak_ram, model_size)
+    metadata = model_metadata(name, model, dataset_metadata, train_env, train_time, epochs, epochs_completed, batch_size, train_loss, val_loss, peak_ram, model_size)
     metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
     write_pickle(metadata, metadata_filepath)
     
