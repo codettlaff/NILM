@@ -456,11 +456,10 @@ def build_model(window_length):
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='mse')
     return model
 
-def train_model(name, data_directory_dict_filepath, epochs, batch_size, save_folderpath):
+def train_model(name, data_directory_dict, epochs, batch_size, save_folderpath):
     
     train_env = environment_info()
     
-    data_directory_dict = read_pickle(data_directory_dict_filepath)
     dataset_metadata = read_pickle(data_directory_dict['metadata'])
     window_length = dataset_metadata['window_length']
     
@@ -783,3 +782,20 @@ def centralize_data(inp_directory_dict, save_folderpath):
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
     write_pickle(directory_dict, directory_dict_filepath)
     return directory_dict_filepath
+
+def train_all_appliance_models(data_directory_dict_filepath, save_folderpath, epochs, batch_size):
+    model_base_name = os.path.basename(save_folderpath)
+    data_directory_dict = read_pickle(data_directory_dict_filepath)
+    all_models_directory_dict = {}
+    for appliance, appliance_dict in data_directory_dict.items():
+        model_name = f'{model_base_name}_{appliance}'
+        model_save_folderpath = os.path.join(save_folderpath, appliance)
+        os.makedirs(model_save_folderpath, exist_ok=True)
+        model_directory_dict_filepath = train_model(model_name, appliance_dict, epochs, batch_size, model_save_folderpath)
+        all_models_directory_dict[appliance] = read_pickle[model_directory_dict_filepath]
+    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    write_pickle(all_models_directory_dict, directory_dict_filepath)
+    return directory_dict_filepath
+    
+        
+        
