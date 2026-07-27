@@ -61,7 +61,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 # -- model_2
 # ...
 
-# Environment Infor
+# Environment Information
 
 def environment_info():
     return {
@@ -90,7 +90,7 @@ def normalization_factors(x_min, x_max, y_min, y_max):
         'y_min': y_min,
         'y_max': y_max}
 
-def data_metadata(name, input_labels, output_labels, window_length, stride, normalization_factors, total_timesteps, num_samples, processing_time, processing_peak_ram, processing_env, train_test_val_split, train_split, val_split, test_split):
+def data_metadata(name, input_labels, output_labels, window_length, stride, normalization_factors, num_chunks, total_timesteps, num_samples, processing_time, processing_peak_ram, processing_env, train_test_val_split, train_split, val_split, test_split):
     timesteps_used = train_split['num_timesteps'] + val_split['num_timesteps'] + test_split['num_timesteps']
     num_samples = train_split['num_samples'] + val_split['num_samples'] + test_split['num_samples']
     size_MB = train_split['size_MB'] + val_split['size_MB'] + test_split['size_MB']
@@ -102,6 +102,7 @@ def data_metadata(name, input_labels, output_labels, window_length, stride, norm
         'window_length': window_length,
         'stride': stride,
         'normalization_factors': normalization_factors,
+        'num_chunks': num_chunks,
         'total_timesteps': total_timesteps,
         'timesteps_used': timesteps_used,
         'timesteps_discarded': total_timesteps - timesteps_used,
@@ -147,4 +148,152 @@ def model_metadata(name, model, train_time_seconds, epochs_requested, epochs_com
     if test_results: metadata['test_results'] = test_results
     return metadata
 
+# Helper Functions
+
+def read_pickle(filepath):
+    with open(filepath, 'rb') as f: data = pickle.load(f)
+    return data
+
+def write_pickle(data, filepath):
+    with open(filepath, 'wb') as f: pickle.dump(data, f)
+    
+# Pre-process Data
+
+def load_data(ampds_filepath, T_limit):
+    
+    data = np.load(ampds_filepath)
+    X, Y = data['X'], data['Y'] 
+    appliance_names = data['out_labels']
+    T = X.shape[0]
+    T_limit = min(T, T_limit) if T_limit is not None else T
+    X, Y = X[:T_limit], Y[:T_limit]
+    
+    X = X[:, [0,2]] # Keep only P and Q
+    Y = Y[:,:,0] # Keep only P
+    
+    return {
+        'X': X,
+        'Y': Y,
+        'T': T_limit,
+        'appliance_names': appliance_names}
+
+def filter_by_appliances(data, target_appliances):
+    
+    target_data = data.copy()
+    appliance_names = data['appliance_names']
+    indices = [i for i, name in enumerate(appliance_names) if name in target_appliances]
+    appliance_names = appliance_names[indices]
+    target_data['appliance_names'] = appliance_names
+    target_data['Y'] = target_data['Y'][:,indices]
+    return target_data
+
+def precompute_indices(num_timesteps, window_length, stride, train_val_test_split, number_blocks, seed=42):
+    
+    center_offset = window_length // 2
+    guard = window_length - 1
+    guard_left = guard // 2 
+    guard_right = guard - guard_left
+    rng = np.random.default_rng(seed)
+    
+    # Number of blocks in each split
+    n_train_blocks = int(round(train_val_test_split[0] * number_blocks))
+    n_val_blocks = int(round(train_val_test_split[1] * number_blocks))
+    n_test_blocks = number_blocks - n_train_blocks - n_val_blocks
+    
+    # Timesteps in each split
+    n_train = int(train_val_test_split[0] * num_timesteps)
+    n_val = int(train_val_test_split[1] * num_timesteps)
+    n_test = num_timesteps - n_train - n_val
+    
+    # Divide timesteps over given number of blocks
+    def make_lengths(total_length, n_blocks):
+        lengths = np.full(n_blocks, total_length // n_blocks, dtype=int)
+        lengths[:total_length % n_blocks] += 1
+        return lengths
+    
+    block_lengths = np.concatenate([
+        make_lengths(n_train, n_train_blocks),
+        make_lengths(n_val, n_val_blocks),
+        make_lengths(n_test, n_test_blocks)])
+    
+    block_labels = (
+        ['train'] * n_train_blocks + 
+        ['val'] * n_val_blocks +
+        ['test'] * n_test_blocks)
+    
+    # Randomly assign blocks
+    perm = rng.permutation(number_blocks)
+    block_lengths = block_lengths[perm]
+    block_labels = [block_labels[i] for i in perm]
+    
+    # Compute block boundaries
+    starts = np.zeros(number_blocks, dtype=int)
+    ends = np.zeros(number_blocks, dtype=int)
+    start=0
+    for i, length in enumerate(block_lengths):
+        starts[i] = start
+        end = min(start + length, num_timesteps)
+        ends[i] = end
+        start = end
+        
+    split = {
+        'train': ([],[]),
+        'val': ([],[]),
+        'test': ([],[])}
+    
+    for i in range(number_blocks):
+        start = starts[i]
+        end = ends[i]
+        
+        # Split guard across both sides of a boundary
+        usable_start = start
+        usable_end = end
+        if i > 0 and block_labels[i] != block_labels[i - 1]: usable_start += guard_right 
+        if i < number_blocks - 1 and block_labels[i] != block_labels[i + 1]: usable_end -= guard_left 
+        if usable_end >= usable_start + window_length:
+            inp = np.arange(usable_start, usable_end - window_length  + 1, stride) 
+            out = inp + center_offset 
+            split[block_labels[i]][0].append(inp) 
+            split[block_labels[i]][1].append(out)
+            
+    # Recombine windows from multiple blocks and shuffle
+    idx_dict = {}
+    for label in ['train', 'val', 'test']:
+        if split[label][0]:
+            inp = np.concatenate(split[label][0])
+            out = np.concatenate(split[label][1])
+            perm = rng.permutation(len(inp))
+            idx_dict[label] = (inp[perm], out[perm])
+        else: idx_dict[label] = (np.array([], dtype=int), np.array([], dtype=int))
+    return idx_dict
+
+def normalize_data(data, idx_dict):
+    
+    data_normalized = data.copy()
+    
+    # Training timesteps
+    train_inp, train_out = idx_dict['train']
+    train_X = data['X'][train_inp]
+    train_Y = data['Y'][train_out]
+    
+    x_min = train_X.min(axis=0)
+    x_max = train_X.max(axis=0)
+    y_min = train_Y.min(axis=0)
+    y_max = train_Y.max(axis=0)
+    
+    # Prevent divide-by-zero
+    x_range = np.maximum(x_max - x_min, 1e-12)
+    y_range = np.maximum(y_max - y_min, 1e-12)
+    
+    data_normalized['X'] = (data['X'] - x_min) / x_range
+    data_normalized['Y'] = (data['Y'] - y_min) / y_range
+    
+    scaling_factors = {
+        'x_min': x_min,
+        'x_max': x_max,
+        'y_min': y_min,
+        'y_max': y_max}
+    data_normalized['scaling_factors'] = scaling_factors
+    
+    return data_normalized
 
