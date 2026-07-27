@@ -348,6 +348,9 @@ def generate_sample(x_data, y_data, i_inp, i_out, window_length):
     return (p_seq, time_features), y_target
 
 def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderpath):
+    
+    processing_env = environment_info()
+    
     data = normalize_data(data, idx_dict)
     X, Y = data['X'], data['Y']
     n_timesteps = Y.shape[0]
@@ -404,7 +407,7 @@ def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderp
     
     # Data Metadata
     name = os.path.basename(save_folderpath)
-    metadata = data_metadata(name, in_labels, out_labels, window_length, stride, normalization_factors, num_chunks, n_timesteps, processing_time, peak_ram, idx_dict['train_test_val_split'], split_info['train'], split_info['val'], split_info['test'])
+    metadata = data_metadata(name, in_labels, out_labels, window_length, stride, normalization_factors, num_chunks, n_timesteps, processing_time, peak_ram, processing_env, idx_dict['train_test_val_split'], split_info['train'], split_info['val'], split_info['test'])
     metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
     write_pickle(metadata, metadata_filepath)
     
@@ -591,3 +594,29 @@ def test_model(model_directory_dict_filepath, data_directory_dict_filepath):
     results = model_performance(mse_norm, rmse_norm, mse_denorm, rmse_denorm, mae, eacc, inference_time, peak_ram, inference_env)
     model_metadata['performance'] = results
     write_pickle(model_metadata, model_directory_dict['metadata'])
+    
+# Automation
+
+def process_house_data(raw_data_filepath, window_length, stride, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
+    data = load_data(raw_data_filepath, T_limit=T_limit)
+    if target_appliances: data = filter_by_appliances(data, target_appliances)
+    idx_dict = precompute_indices(
+        num_timesteps=len(data['X']),
+        window_length=window_length,
+        stride=stride,
+        train_val_test_split=train_val_test_split,
+        number_blocks=42)
+    
+    # One Dataset per Appliance
+    directory_dict = {}
+    for appliance in data['appliance_names']:
+        target_data = filter_by_appliances(data, [appliance])
+        target_data_save_folderpath = os.path.join(save_folderpath, appliance)
+        os.makedirs(target_data_save_folderpath, exist_ok=True)
+        target_directory_dict_filepath = prepare_data(target_data, idx_dict, window_length, stride, target_data_save_folderpath)
+        directory_dict[appliance] = read_pickle(target_directory_dict_filepath)
+        
+    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    write_pickle(directory_dict, directory_dict_filepath)
+    return directory_dict_filepath
+    
