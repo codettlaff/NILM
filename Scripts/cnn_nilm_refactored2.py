@@ -90,7 +90,7 @@ def normalization_factors(x_min, x_max, y_min, y_max):
         'y_min': y_min,
         'y_max': y_max}
 
-def data_metadata(name, input_labels, output_labels, window_length, stride, normalization_factors, num_chunks, total_timesteps, num_samples, processing_time, processing_peak_ram, processing_env, train_test_val_split, train_split, val_split, test_split):
+def data_metadata(name, input_labels, output_labels, window_length, stride, normalization_factors, num_chunks, total_timesteps, processing_time, processing_peak_ram, processing_env, train_test_val_split, train_split, val_split, test_split):
     timesteps_used = train_split['num_timesteps'] + val_split['num_timesteps'] + test_split['num_timesteps']
     num_samples = train_split['num_samples'] + val_split['num_samples'] + test_split['num_samples']
     size_MB = train_split['size_MB'] + val_split['size_MB'] + test_split['size_MB']
@@ -147,6 +147,39 @@ def model_metadata(name, model, train_time_seconds, epochs_requested, epochs_com
         'size_MB': size / 1024**2}
     if test_results: metadata['test_results'] = test_results
     return metadata
+
+def print_metadata(metadata_filepath, show=False, txt_filepath=None, overwrite=False):
+    
+    metadata = read_pickle(metadata_filepath)
+    
+    def format_value(value, indent=0):
+        lines = []
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if isinstance(v, (dict, list, tuple)):
+                    lines.append(' ' * indent + f'{k}:')
+                    lines.extend(format_value(v, indent + 4))
+                else: lines.append(' ' * indent + f'{k:<32}: {v}')
+                
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                if isinstance(item, (dict, list, tuple)): lines.extend(format_value(item, indent + 4))
+            else: lines.append(' ' * indent + f'- {item}')
+            
+        else: lines.append(' ' * indent + str(value))
+        return lines
+    
+    title = f'Metadata: {metadata['type']}'
+    lines = [title.upper(), '=' * 80]
+    lines.extend(format_value({k: v for k, v in metadata.items() if k != "metadata_name"}))
+    text = '\n'.join(lines)
+    
+    if show: print(text)
+    if txt_filepath is not None:
+        mode = 'w' if overwrite else 'a'
+        with open(txt_filepath, mode) as f:
+            if not overwrite: f.write('\n\n')
+        f.write(text)
 
 # Helper Functions
 
@@ -265,6 +298,8 @@ def precompute_indices(num_timesteps, window_length, stride, train_val_test_spli
             perm = rng.permutation(len(inp))
             idx_dict[label] = (inp[perm], out[perm])
         else: idx_dict[label] = (np.array([], dtype=int), np.array([], dtype=int))
+        
+    idx_dict['train_val_test_split'] = train_val_test_split
     return idx_dict
 
 def normalize_data(data, idx_dict):
@@ -297,3 +332,83 @@ def normalize_data(data, idx_dict):
     
     return data_normalized
 
+def process_window(x_win):
+    x_win = np.asarray(x_win, dtype=np.float32)
+    p_seq = x_win[:, 2:3]
+    center = center = len(x_win) // 2 
+    time_features = x_win[center, 0:2]
+    return p_seq, time_features
+
+def generate_sample(x_data, y_data, i_inp, i_out, window_length):
+    x_win = x_data[i_inp : i_inp + window_length]
+    if x_win.shape[0] != window_length: return None
+    p_seq, time_features = process_window(x_win)
+    y_target = y_data[i_out]
+    return (p_seq, time_features), y_target
+
+def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderpath):
+    data = normalize_data(data, idx_dict)
+    X, Y = data['X'], data['Y']
+    n_timesteps = Y.shape[0]
+    n_appliances = Y.shape[1]
+    in_labels = ['time_of_day', 'p_aggregate']
+    out_labels = [f'p_{appliance}' for appliance in data['appliance_names']]
+    
+    directory_dict = {}
+    split_info = {}
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info()
+    timesteps_used = 0
+    
+    processing_start_time = time.perf_counter()
+    for split in ['train', 'val', 'test']:
+        inp_idx, out_idx = idx_dict[split]
+        n_samples = len(inp_idx)
+        
+        # Allocate Arrays
+        X_p = np.empty((n_samples, window_length, 1), dtype=np.float32)
+        X_time = np.empty((n_samples, 2), dtype=np.float32)
+        Y_p = np.empty((n_samples, n_appliances), dtype=np.float32)
+        
+        # Generate Samples
+        for j, (i_inp, i_out) in enumerate(zip(inp_idx, out_idx)):
+            (p_seq, time_features), y_target = generate_sample(X, Y, i_inp, i_out, window_length)
+            X_p[j] = p_seq
+            X_time[j] = time_features
+            Y_p[j] = y_target
+            peak_ram = max(peak_ram, process.memory_info().rss)
+            
+        dataset_size = (X_p.nbytes + X_time.nbytes + Y_p.nbytes) 
+        
+        # Output Directory
+        split_dir = os.path.join(save_folderpath, split)
+        os.makedirs(split_dir, exist_ok=True)
+        
+        # Save Arrays
+        np.save(os.path.join(split_dir, 'X_p.npy'), X_p)
+        np.save(os.path.join(split_dir, 'X_time.npy'), X_time)
+        np.save(os.path.join(split_dir, 'Y_p'), Y_p)
+        
+        # Save Split Info
+        split_timesteps_used = n_samples * window_length
+        timesteps_used += split_timesteps_used
+        split_info[split] = data_split(split_timesteps_used, n_samples, dataset_size)
+        
+        # Update Directory Dict
+        directory_dict[split] = {
+            'X_p': os.path.join(split_dir, 'X_p.npy'),
+            'X_time': os.path.join(split_dir, 'X_time.npy'),
+            'Y_p': os.path.join(split_dir, 'Y_p.npy')}
+    processing_time = time.perf_counter() - processing_start_time
+    
+    # Data Metadata
+    name = os.path.basename(save_folderpath)
+    metadata = data_metadata(name, in_labels, out_labels, window_length, stride, normalization_factors, num_chunks, n_timesteps, processing_time, peak_ram, idx_dict['train_test_val_split'], split_info['train'], split_info['val'], split_info['test'])
+    metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
+    write_pickle(metadata, metadata_filepath)
+    
+    # Directory Dict
+    directory_dict['metadata'] = metadata_filepath
+    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    
+    return directory_dict_filepath

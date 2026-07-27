@@ -775,3 +775,4 @@ if __name__ == '__main__':
     directory_dict = train_all_appliance_models(directory_dict, save_folderpath, model_base_name, epochs, batch_size)
     
     
+    
