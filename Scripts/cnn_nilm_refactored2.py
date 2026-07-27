@@ -620,3 +620,14 @@ def process_house_data(raw_data_filepath, window_length, stride, train_val_test_
     write_pickle(directory_dict, directory_dict_filepath)
     return directory_dict_filepath
     
+def process_multiple_house_data(raw_data_filepath_list, window_length, stride, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
+    directory_dict = {}
+    for filepath in raw_data_filepath_list:
+        house_name = os.path.basename(filepath).replace('.mat', '')
+        house_save_folderpath = os.path.join(save_folderpath, house_name)
+        os.makedirs(house_save_folderpath, exist_ok=True)
+        directory_dict[house_name] = process_house_data(filepath, window_length, stride, train_val_test_split, house_save_folderpath, T_limit, target_appliances)
+    directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    write_pickle(directory_dict, directory_dict_filepath)
+    return directory_dict_filepath
+
