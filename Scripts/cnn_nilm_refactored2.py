@@ -798,4 +798,9 @@ def train_all_appliance_models(data_directory_dict_filepath, save_folderpath, ep
     return directory_dict_filepath
     
         
-        
+def test_all_appliance_models(data_directory_dict, model_directory_dict, batch_size):
+    appliance_names = model_directory_dict.keys()
+    for appliance in tqdm(appliance_names, desc='Appliances'):
+        dataset_metadata_filepath = data_directory_dict[appliance]['metadata']
+        dataset_metadata = read_pickle(dataset_metadata_filepath)
+        test_model(model_directory_dict['appliance'], dataset_metadata, batch_size)
