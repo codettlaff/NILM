@@ -783,9 +783,8 @@ def centralize_data(inp_directory_dict, save_folderpath):
     write_pickle(directory_dict, directory_dict_filepath)
     return directory_dict_filepath
 
-def train_all_appliance_models(data_directory_dict_filepath, save_folderpath, epochs, batch_size):
+def train_all_appliance_models(data_directory_dict, save_folderpath, epochs, batch_size):
     model_base_name = os.path.basename(save_folderpath)
-    data_directory_dict = read_pickle(data_directory_dict_filepath)
     all_models_directory_dict = {}
     for appliance, appliance_dict in data_directory_dict.items():
         model_name = f'{model_base_name}_{appliance}'
@@ -804,3 +803,55 @@ def test_all_appliance_models(data_directory_dict, model_directory_dict, batch_s
         dataset_metadata_filepath = data_directory_dict[appliance]['metadata']
         dataset_metadata = read_pickle(dataset_metadata_filepath)
         test_model(model_directory_dict['appliance'], dataset_metadata, batch_size)
+        
+if __name__ == '__main__':
+    
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    data_dir = os.path.join(base_dir, 'data')
+    models_dir = os.path.join(base_dir, 'models')
+    os.makedirs(models_dir, exist_ok=True)
+    
+    # Settings
+    T_limit = 172800 # Two Days
+    train_val_test_split = [0.7, 0.15, 0.15]
+    window_length = 300 # 5 Minutes
+    stride = 1 
+    epochs = 20 
+    batch_size = 32
+    
+    # Pre-Process Data
+    ukdale_folderpath = os.path.join(base_dir, 'ukdale')
+    ukdale_processed_data_folderpath = os.path.join(data_dir, 'ukdale_processed')
+    os.makedirs(ukdale_processed_data_folderpath, exist_ok=True)
+    ukdale_filepath_list = [
+        os.path.join(ukdale_folderpath, f)
+        for f in os.listdir(ukdale_folderpath)
+        if f.endswith('.mat')]
+    
+    ukdale_processed_directory_dict_filepath = process_multiple_house_data(
+        ukdale_filepath_list,
+        window_length,
+        stride,
+        train_val_test_split,
+        ukdale_processed_data_folderpath,
+        T_limit)
+    
+    # Centralize Data
+    centralized_data_folderpath = os.path.join(data_dir, 'ukdale_centralized')
+    os.makedirs(centralized_data_folderpath, exist_ok=True)
+    centralized_data_directory_dict_filepath = centralize_data(
+        ukdale_processed_data_folderpath,
+        centralized_data_folderpath)
+    
+    # Single House, 1 Model Per Appliance
+    house1_data_directory_dict = load_data(ukdale_processed_directory_dict_filepath)['house1']
+    house1_model_save_folderpath = os.path.join(models_dir, 'house1')
+    os.makedirs(house1_model_save_folderpath, exist_ok=True)
+    house1_model_directory_dict_filepath = train_all_appliance_models(house1_data_directory_dict, house1_model_save_folderpath, epochs, batch_size)
+    
+    # Train Centralized Model
+    model_name = 'ukdale_centralized'
+    centralized_model_folderpath = os.path.join(model_name)
+    os.makedirs(models_dir, exist_ok=True)
+    train_all_appliance_models(read_pickle(centralized_data_directory_dict_filepath), centralized_model_folderpath, epochs, batch_size)
+    
