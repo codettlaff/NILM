@@ -170,7 +170,7 @@ def print_metadata(metadata_filepath, show=False, txt_filepath=None, overwrite=F
         else: lines.append(' ' * indent + str(value))
         return lines
     
-    title = f'Metadata: {metadata['type']}'
+    title = f"Metadata: {metadata['type']}"
     lines = [title.upper(), '=' * 80]
     lines.extend(format_value({k: v for k, v in metadata.items() if k != "metadata_name"}))
     text = '\n'.join(lines)
@@ -195,15 +195,15 @@ def write_pickle(data, filepath):
 
 def load_data(ampds_filepath, T_limit):
     
-    data = np.load(ampds_filepath)
-    X, Y = data['X'], data['Y'] 
-    appliance_names = data['out_labels']
+    data = loadmat(ampds_filepath)
+    X, Y = data['input'], data['output'] 
+    appliance_names = data['labelOut'][2:]
     T = X.shape[0]
     T_limit = min(T, T_limit) if T_limit is not None else T
     X, Y = X[:T_limit], Y[:T_limit]
     
-    X = X[:, [0,2]] # Keep only P and Q
-    Y = Y[:,:,0] # Keep only P
+    X = X[:, 2].reshape(-1,1)      # Keep only P (3rd column)
+    Y = Y[:, 2:]    # Keep only appliance columns, discard time and id
     
     return {
         'X': X,
@@ -820,7 +820,7 @@ if __name__ == '__main__':
     batch_size = 32
     
     # Pre-Process Data
-    ukdale_folderpath = os.path.join(base_dir, 'ukdale')
+    ukdale_folderpath = os.path.join(data_dir, 'ukdale')
     ukdale_processed_data_folderpath = os.path.join(data_dir, 'ukdale_processed')
     os.makedirs(ukdale_processed_data_folderpath, exist_ok=True)
     ukdale_filepath_list = [
