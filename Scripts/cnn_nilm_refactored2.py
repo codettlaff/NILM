@@ -692,19 +692,19 @@ def centralize_data(inp_directory_dict, save_folderpath):
                     
                 # Verify shared metadata fields match previous homes.
                 else:
-                    reference = metadata_dict[appliance][0]
+                    reference = metadata_dict[appliance]
                     if any(metadata[field] != reference[field] for field in fields): continue # Skip appliance
-                    metadata_dict[appliance].append(metadata)
+                    metadata_dict[appliance] = metadata
                     
                 # Append Filepaths
                 for split in splits:
                     X_p_list[appliance][split].append(appliance_dict[split]['X_p'])
                     X_time_list[appliance][split].append(appliance_dict[split]['X_time'])
-                    Y_list[appliance][split].append(appliance_dict[split]['Y'])
+                    Y_list[appliance][split].append(appliance_dict[split]['Y_p'])
                     
         return X_p_list, X_time_list, Y_list, metadata_dict
     
-    X_p_lists, X_time_lists, Y_lists, metadata_dict = group_filepaths
+    X_p_lists, X_time_lists, Y_lists, metadata_dict = group_filepaths(inp_directory_dict)
     splits = ('train', 'val', 'test')
     
     # Create Output Directory
@@ -835,6 +835,10 @@ if __name__ == '__main__':
     epochs = 20 
     batch_size = 32
     
+    # Script Tasks
+    generate_house_data = False # already done
+    
+    
     # Pre-Process Data
     ukdale_folderpath = os.path.join(data_dir, 'ukdale')
     ukdale_processed_data_folderpath = os.path.join(data_dir, 'ukdale_processed')
@@ -844,20 +848,23 @@ if __name__ == '__main__':
         for f in os.listdir(ukdale_folderpath)
         if f.endswith('.mat')]
     
-    ukdale_processed_directory_dict_filepath = process_multiple_house_data(
-        ukdale_filepath_list,
-        window_length,
-        stride,
-        num_chunks,
-        train_val_test_split,
-        ukdale_processed_data_folderpath,
-        T_limit)
+    if generate_house_data:
+        ukdale_processed_directory_dict_filepath = process_multiple_house_data(
+            ukdale_filepath_list,
+            window_length,
+            stride,
+            num_chunks,
+            train_val_test_split,
+            ukdale_processed_data_folderpath,
+            T_limit)
+    else: ukdale_processed_directory_dict_filepath = os.path.join(ukdale_processed_data_folderpath, 'directory_dict.pkl')
+    ukdale_data_directory_dict = read_pickle(ukdale_processed_directory_dict_filepath)
     
     # Centralize Data
     centralized_data_folderpath = os.path.join(data_dir, 'ukdale_centralized')
     os.makedirs(centralized_data_folderpath, exist_ok=True)
     centralized_data_directory_dict_filepath = centralize_data(
-        ukdale_processed_data_folderpath,
+        ukdale_data_directory_dict,
         centralized_data_folderpath)
     
     # Single House, 1 Model Per Appliance
