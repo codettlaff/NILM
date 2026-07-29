@@ -596,7 +596,7 @@ def test_model(model_directory_dict_filepath, data_directory_dict_filepath):
     
 # Automation
 
-def process_house_data(raw_data_filepath, window_length, stride, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
+def process_house_data(raw_data_filepath, window_length, stride, num_chunks, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
     data = load_data(raw_data_filepath, T_limit=T_limit)
     if target_appliances: data = filter_by_appliances(data, target_appliances)
     idx_dict = precompute_indices(
@@ -610,22 +610,22 @@ def process_house_data(raw_data_filepath, window_length, stride, train_val_test_
     directory_dict = {}
     for appliance in data['appliance_names']:
         target_data = filter_by_appliances(data, [appliance])
-        target_data_save_folderpath = os.path.join(save_folderpath, appliance)
+        target_data_save_folderpath = os.path.join(save_folderpath, appliance.strip())
         os.makedirs(target_data_save_folderpath, exist_ok=True)
-        target_directory_dict_filepath = prepare_data(target_data, idx_dict, window_length, stride, target_data_save_folderpath)
+        target_directory_dict_filepath = prepare_data(target_data, idx_dict, num_chunks, window_length, stride, target_data_save_folderpath)
         directory_dict[appliance] = read_pickle(target_directory_dict_filepath)
         
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
     write_pickle(directory_dict, directory_dict_filepath)
     return directory_dict_filepath
     
-def process_multiple_house_data(raw_data_filepath_list, window_length, stride, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
+def process_multiple_house_data(raw_data_filepath_list, window_length, stride, num_chunks, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
     directory_dict = {}
     for filepath in raw_data_filepath_list:
         house_name = os.path.basename(filepath).replace('.mat', '')
         house_save_folderpath = os.path.join(save_folderpath, house_name)
         os.makedirs(house_save_folderpath, exist_ok=True)
-        directory_dict_filepath = process_house_data(filepath, window_length, stride, train_val_test_split, house_save_folderpath, T_limit, target_appliances)
+        directory_dict_filepath = process_house_data(filepath, window_length, stride, num_chunks, train_val_test_split, house_save_folderpath, T_limit, target_appliances)
         directory_dict[house_name] = read_pickle(directory_dict_filepath)
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
     write_pickle(directory_dict, directory_dict_filepath)
@@ -832,6 +832,7 @@ if __name__ == '__main__':
         ukdale_filepath_list,
         window_length,
         stride,
+        num_chunks,
         train_val_test_split,
         ukdale_processed_data_folderpath,
         T_limit)
