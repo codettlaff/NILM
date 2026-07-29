@@ -316,10 +316,10 @@ def normalize_data(data, idx_dict):
     cos_hour = np.cos(theta).astype(np.float32)
     
     # Normalize aggregate power using training data only
-    p_min = train_X[:, 1].min()
-    p_max = train_X[:, 1].max()
+    p_min = train_X.min()
+    p_max = train_X.max()
     p_range = max(p_max - p_min, 1e-12)
-    p_agg = (data['X'][:, 1] - p_min) / p_range
+    p_agg = (data['X'] - p_min) / p_range
     
     # Normalize appliance powers
     y_min = train_Y.min(axis=0)
