@@ -195,7 +195,7 @@ def load_data(ampds_filepath, T_limit):
     
     data = loadmat(ampds_filepath)
     X, Y = data['input'], data['output'] 
-    appliance_names = data['labelOut'][2:]
+    appliance_names = [str(name[0]).strip() for name in data['labelOut'][2:]]
     T = X.shape[0]
     T_limit = min(T, T_limit) if T_limit is not None else T
     X, Y = X[:T_limit], Y[:T_limit]
