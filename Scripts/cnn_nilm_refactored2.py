@@ -816,6 +816,7 @@ if __name__ == '__main__':
     train_val_test_split = [0.7, 0.15, 0.15]
     window_length = 300 # 5 Minutes
     stride = 1 
+    num_chunks = 100
     epochs = 20 
     batch_size = 32
     
