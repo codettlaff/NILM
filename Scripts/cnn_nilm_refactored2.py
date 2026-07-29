@@ -222,7 +222,6 @@ def filter_by_appliances(data, target_appliances):
     return target_data
 
 def precompute_indices(num_timesteps, window_length, stride, train_val_test_split, number_blocks, seed=42):
-    
     center_offset = window_length // 2
     guard = window_length - 1
     guard_left = guard // 2 
@@ -292,6 +291,7 @@ def precompute_indices(num_timesteps, window_length, stride, train_val_test_spli
             
     # Recombine windows from multiple blocks and shuffle
     idx_dict = {}
+    idx_dict['num_blocks'] = number_blocks
     for label in ['train', 'val', 'test']:
         if split[label][0]:
             inp = np.concatenate(split[label][0])
@@ -299,8 +299,6 @@ def precompute_indices(num_timesteps, window_length, stride, train_val_test_spli
             perm = rng.permutation(len(inp))
             idx_dict[label] = (inp[perm], out[perm])
         else: idx_dict[label] = (np.array([], dtype=int), np.array([], dtype=int))
-        
-    idx_dict['train_val_test_split'] = train_val_test_split
     return idx_dict
 
 def normalize_data(data, idx_dict):
@@ -604,7 +602,8 @@ def process_house_data(raw_data_filepath, window_length, stride, num_chunks, tra
         window_length=window_length,
         stride=stride,
         train_val_test_split=train_val_test_split,
-        number_blocks=42)
+        number_blocks=num_chunks,
+        seed=42)
     
     # One Dataset per Appliance
     directory_dict = {}
