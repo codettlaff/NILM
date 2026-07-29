@@ -77,9 +77,8 @@ def environment_info():
 
 # Metadata Dicts
 
-def data_split(num_timesteps, num_samples, size):
+def data_split(num_samples, size):
     return {
-        'num_timesteps': num_timesteps,
         'num_samples': num_samples,
         'size_MB': size / 1024**2}
 
@@ -90,8 +89,7 @@ def normalization_factors(x_min, x_max, y_min, y_max):
         'y_min': y_min,
         'y_max': y_max}
 
-def data_metadata(name, input_labels, output_labels, window_length, stride, normalization_factors, num_chunks, total_timesteps, processing_time, processing_peak_ram, processing_env, train_test_val_split, train_split, val_split, test_split):
-    timesteps_used = train_split['num_timesteps'] + val_split['num_timesteps'] + test_split['num_timesteps']
+def data_metadata(name, input_labels, output_labels, window_length, stride, normalization_factors, num_chunks, total_timesteps, timesteps_used, processing_time, processing_peak_ram, processing_env, train_test_val_split, train_split, val_split, test_split):
     num_samples = train_split['num_samples'] + val_split['num_samples'] + test_split['num_samples']
     size_MB = train_split['size_MB'] + val_split['size_MB'] + test_split['size_MB']
     return {
@@ -108,7 +106,7 @@ def data_metadata(name, input_labels, output_labels, window_length, stride, norm
         'timesteps_discarded': total_timesteps - timesteps_used,
         'num_samples': num_samples,
         'processing_time': processing_time,
-        'processing_peak_RAM_MB': processing_peak_ram,
+        'processing_peak_RAM_MB': processing_peak_ram / 1024**2,
         'processing_env': processing_env,
         'size_MB': size_MB,
         'train_test_val_split': train_test_val_split,
@@ -260,6 +258,7 @@ def precompute_indices(num_timesteps, window_length, stride, train_val_test_spli
     block_labels = [block_labels[i] for i in perm]
     
     # Compute block boundaries
+    used_out = []
     starts = np.zeros(number_blocks, dtype=int)
     ends = np.zeros(number_blocks, dtype=int)
     start=0
@@ -286,6 +285,7 @@ def precompute_indices(num_timesteps, window_length, stride, train_val_test_spli
         if usable_end >= usable_start + window_length:
             inp = np.arange(usable_start, usable_end - window_length  + 1, stride) 
             out = inp + center_offset 
+            used_out.append(out)
             split[block_labels[i]][0].append(inp) 
             split[block_labels[i]][1].append(out)
             
@@ -299,6 +299,12 @@ def precompute_indices(num_timesteps, window_length, stride, train_val_test_spli
             perm = rng.permutation(len(inp))
             idx_dict[label] = (inp[perm], out[perm])
         else: idx_dict[label] = (np.array([], dtype=int), np.array([], dtype=int))
+        
+    used_out = np.concatenate(used_out)
+    idx_dict['timesteps_discarded'] = (num_timesteps - np.unique(used_out).size)
+    idx_dict['timesteps_used'] = np.unique(used_out).size
+        
+    idx_dict['train_val_test_split'] = train_val_test_split
     return idx_dict
 
 def normalize_data(data, idx_dict):
@@ -337,6 +343,7 @@ def normalize_data(data, idx_dict):
         'y_max': y_max}
     
     data_normalized['normalization_factors'] = normalization_factors
+    data_normalized['input_labels'] = ['sin_hour', 'cos_hour', 'p_agg']
     return data_normalized
 
 def process_window(x_win):
@@ -361,14 +368,14 @@ def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderp
     X, Y = data['X'], data['Y']
     n_timesteps = Y.shape[0]
     n_appliances = Y.shape[1]
-    in_labels = ['time_of_day', 'p_aggregate']
+    in_labels = data['input_labels']
     out_labels = [f'p_{appliance}' for appliance in data['appliance_names']]
     
     directory_dict = {}
     split_info = {}
     process = psutil.Process(os.getpid())
-    peak_ram = process.memory_info()
-    timesteps_used = 0
+    peak_ram = process.memory_info().rss
+    timesteps_used = idx_dict['timesteps_used']
     
     processing_start_time = time.perf_counter()
     for split in ['train', 'val', 'test']:
@@ -379,6 +386,7 @@ def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderp
         X_p = np.empty((n_samples, window_length, 1), dtype=np.float32)
         X_time = np.empty((n_samples, 2), dtype=np.float32)
         Y_p = np.empty((n_samples, n_appliances), dtype=np.float32)
+        peak_ram = max(peak_ram, process.memory_info().rss)
         
         # Generate Samples
         for j, (i_inp, i_out) in enumerate(zip(inp_idx, out_idx)):
@@ -398,11 +406,10 @@ def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderp
         np.save(os.path.join(split_dir, 'X_p.npy'), X_p)
         np.save(os.path.join(split_dir, 'X_time.npy'), X_time)
         np.save(os.path.join(split_dir, 'Y_p'), Y_p)
+        peak_ram = max(peak_ram, process.memory_info().rss)
         
         # Save Split Info
-        split_timesteps_used = n_samples * window_length
-        timesteps_used += split_timesteps_used
-        split_info[split] = data_split(split_timesteps_used, n_samples, dataset_size)
+        split_info[split] = data_split(n_samples, dataset_size)
         
         # Update Directory Dict
         directory_dict[split] = {
@@ -413,13 +420,14 @@ def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderp
     
     # Data Metadata
     name = os.path.basename(save_folderpath)
-    metadata = data_metadata(name, in_labels, out_labels, window_length, stride, normalization_factors, num_chunks, n_timesteps, processing_time, peak_ram, processing_env, idx_dict['train_test_val_split'], split_info['train'], split_info['val'], split_info['test'])
+    metadata = data_metadata(name, in_labels, out_labels, window_length, stride, normalization_factors, num_chunks, n_timesteps, timesteps_used, processing_time, peak_ram, processing_env, idx_dict['train_val_test_split'], split_info['train'], split_info['val'], split_info['test'])
     metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
     write_pickle(metadata, metadata_filepath)
     
     # Directory Dict
     directory_dict['metadata'] = metadata_filepath
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
+    write_pickle(directory_dict, directory_dict_filepath)
     
     return directory_dict_filepath
 
