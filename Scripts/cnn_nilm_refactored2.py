@@ -82,13 +82,6 @@ def data_split(num_samples, size):
         'num_samples': num_samples,
         'size_MB': size / 1024**2}
 
-def normalization_factors(x_min, x_max, y_min, y_max):
-    return {
-        'x_min': x_min,
-        'x_max': x_max,
-        'y_min': y_min,
-        'y_max': y_max}
-
 def data_metadata(name, input_labels, output_labels, window_length, stride, normalization_factors, num_chunks, total_timesteps, timesteps_used, processing_time, processing_peak_ram, processing_env, train_test_val_split, train_split, val_split, test_split):
     num_samples = train_split['num_samples'] + val_split['num_samples'] + test_split['num_samples']
     size_MB = train_split['size_MB'] + val_split['size_MB'] + test_split['size_MB']
@@ -420,6 +413,7 @@ def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderp
     
     # Data Metadata
     name = os.path.basename(save_folderpath)
+    normalization_factors = data['normalization_factors']
     metadata = data_metadata(name, in_labels, out_labels, window_length, stride, normalization_factors, num_chunks, n_timesteps, timesteps_used, processing_time, peak_ram, processing_env, idx_dict['train_val_test_split'], split_info['train'], split_info['val'], split_info['test'])
     metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
     write_pickle(metadata, metadata_filepath)
@@ -685,16 +679,16 @@ def centralize_data(inp_directory_dict, save_folderpath):
                 
                 # First Occurance of this Appliance
                 if appliance not in metadata_dict:
-                    metadata_dict[appliance] = metadata
+                    metadata_dict[appliance] = [metadata]
                     X_p_list[appliance] = {split: [] for split in splits}
                     X_time_list[appliance] = {split: [] for split in splits}
                     Y_list[appliance] = {split: [] for split in splits}
                     
                 # Verify shared metadata fields match previous homes.
                 else:
-                    reference = metadata_dict[appliance]
+                    reference = metadata_dict[appliance][0]
                     if any(metadata[field] != reference[field] for field in fields): continue # Skip appliance
-                    metadata_dict[appliance] = metadata
+                    metadata_dict[appliance].append(metadata)
                     
                 # Append Filepaths
                 for split in splits:
@@ -730,15 +724,10 @@ def centralize_data(inp_directory_dict, save_folderpath):
                 concatenated_dataset_filepath = directory_dict[appliance][split][name]
                 concatenate_datasets(filepath_list, concatenated_dataset_filepath)
                 
-    # Centralize Metadata
-    switch = {
-        'train': 'training_dataset_metadata',
-        'val': 'validation_dataset_metadata',
-        'test': 'testing_dataset_metadata'}
-       
     # Accumulate MetaData
     for appliance, metadata_list in metadata_dict.items():
-        centralized_metadata = metadata_list.copy()
+        reference = metadata_list[0]
+        centralized_metadata = reference.copy()
         
         global_nfs = centralized_metadata['normalization_factors']
         total_timesteps = 0
@@ -749,7 +738,7 @@ def centralize_data(inp_directory_dict, save_folderpath):
             global_nfs['x_min'] = min(global_nfs['x_min'], nf['x_min'])
             global_nfs['x_max'] = max(global_nfs['x_max'], nf['x_max'])
             global_nfs['y_min'] = min(global_nfs['y_min'], nf['y_min'])
-            global_nfs['y_max'] - max(global_nfs['y_max'], nf['y_max'])
+            global_nfs['y_max'] = max(global_nfs['y_max'], nf['y_max'])
             total_timesteps += metadata['total_timesteps']
             processing_time += metadata['processing_time']
             peak_RAM_MB = max(peak_RAM_MB, metadata['processing_peak_RAM_MB'])
@@ -761,26 +750,25 @@ def centralize_data(inp_directory_dict, save_folderpath):
         # Accumulate Split Info
         timesteps_used, num_samples,size_MB = 0, 0, 0.0
         for split in splits:
-            split_num_timesteps, split_num_samples, split_size_MB = 0, 0
+            split_num_samples, split_size_MB = 0, 0.0
             
             for metadata in metadata_list:
-                split_info = metadata[switch[split]]
-                split_num_timesteps += split_info['num_timesteps']
+                split_info = metadata[split + '_split']
                 split_num_samples += split_info['num_samples']
                 split_size_MB += split_info['size_MB']
                 
-            split_info = data_split(split_num_timesteps, split_num_samples, split_size_MB*1024**2)
-            timesteps_used += split_num_timesteps
+            split_info = data_split(split_num_samples, split_size_MB*1024**2)
             num_samples += split_num_samples
             size_MB += split_size_MB
             centralized_metadata[f'{split}_split'] = split_info
             
-        centralized_metadata['timesteps_used'] = timesteps_used
         centralized_metadata['num_samples'] = num_samples
         centralized_metadata['size_MB'] = size_MB
         
         centralized_metadata['name'] = os.path.basename(save_folderpath) + f'_{appliance}'
-        centralized_metadata['timesteps_discarded'] = total_timesteps = timesteps_used
+        timesteps_used = metadata['timesteps_used']
+        centralized_metadata['timesteps_used'] = timesteps_used
+        centralized_metadata['timesteps_discarded'] = total_timesteps - timesteps_used
         train_split = centralized_metadata['train_split']['num_samples'] / centralized_metadata['num_samples']
         val_split = centralized_metadata['val_split']['num_samples'] / centralized_metadata['num_samples']
         test_split = centralized_metadata['test_split']['num_samples'] / centralized_metadata['num_samples']
@@ -790,7 +778,7 @@ def centralize_data(inp_directory_dict, save_folderpath):
         centralized_metadata.pop('processing_env') # No longer makes sense, since every house may have a different processing env.
         centralized_metadata.pop('num_chunks') # No longer useful, every house may have used different number of chunks.
         
-        centralized_metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
+        centralized_metadata_filepath = directory_dict[appliance]['metadata']
         write_pickle(centralized_metadata, centralized_metadata_filepath)
         
     # Write Directory Dict
