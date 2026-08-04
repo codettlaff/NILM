@@ -825,6 +825,7 @@ if __name__ == '__main__':
     
     # Script Tasks
     generate_house_data = False # already done
+    generate_centralized_data = False # already done
     
     # Pre-Process Data
     ukdale_folderpath = os.path.join(data_dir, 'ukdale')
@@ -848,15 +849,17 @@ if __name__ == '__main__':
     ukdale_data_directory_dict = read_pickle(ukdale_processed_directory_dict_filepath)
     
     # Centralize Data
-    centralized_data_folderpath = os.path.join(data_dir, 'ukdale_centralized')
-    os.makedirs(centralized_data_folderpath, exist_ok=True)
-    centralized_data_directory_dict_filepath = centralize_data(
-        ukdale_data_directory_dict,
-        centralized_data_folderpath)
+    if generate_centralized_data:
+        centralized_data_folderpath = os.path.join(data_dir, 'ukdale_centralized')
+        os.makedirs(centralized_data_folderpath, exist_ok=True)
+        centralized_data_directory_dict_filepath = centralize_data(
+            ukdale_data_directory_dict,
+            centralized_data_folderpath)
     
     # Single House, 1 Model Per Appliance
-    house1_data_directory_dict = load_data(ukdale_processed_directory_dict_filepath)['house1']
-    house1_model_save_folderpath = os.path.join(models_dir, 'house1')
+    directory_dict = read_pickle(ukdale_processed_directory_dict_filepath)
+    house1_data_directory_dict = directory_dict['ukdale1']
+    house1_model_save_folderpath = os.path.join(models_dir, 'ukdale1')
     os.makedirs(house1_model_save_folderpath, exist_ok=True)
     house1_model_directory_dict_filepath = train_all_appliance_models(house1_data_directory_dict, house1_model_save_folderpath, epochs, batch_size)
     
