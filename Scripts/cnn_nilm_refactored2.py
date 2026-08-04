@@ -391,10 +391,10 @@ def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderp
         # Generate Samples
         for j, (i_inp, i_out) in enumerate(zip(inp_idx, out_idx)):
             (p_seq, time_features), y_target = generate_sample(X, Y, i_inp, i_out, window_length)
+            peak_ram = max(peak_ram, process.memory_info().rss)
             X_p[j] = p_seq
             X_time[j] = time_features
             Y_p[j] = y_target
-            peak_ram = max(peak_ram, process.memory_info().rss)
             
         dataset_size = (X_p.nbytes + X_time.nbytes + Y_p.nbytes) 
         
@@ -727,7 +727,8 @@ def centralize_data(inp_directory_dict, save_folderpath):
             'Y': Y_lists}.items():
         for appliance, split_dict in file_lists.items():
             for split, filepath_list in split_dict.items():
-                np.save(directory_dict[appliance][split], concatenate_datasets(filepath_list))
+                concatenated_dataset_filepath = directory_dict[appliance][split][name]
+                concatenate_datasets(filepath_list, concatenated_dataset_filepath)
                 
     # Centralize Metadata
     switch = {
@@ -737,8 +738,7 @@ def centralize_data(inp_directory_dict, save_folderpath):
        
     # Accumulate MetaData
     for appliance, metadata_list in metadata_dict.items():
-        reference = metadata_list[0]
-        centralized_metadata = reference.copy()
+        centralized_metadata = metadata_list.copy()
         
         global_nfs = centralized_metadata['normalization_factors']
         total_timesteps = 0
@@ -836,8 +836,7 @@ if __name__ == '__main__':
     batch_size = 32
     
     # Script Tasks
-    generate_house_data =True # already done
-    
+    generate_house_data = False # already done
     
     # Pre-Process Data
     ukdale_folderpath = os.path.join(data_dir, 'ukdale')
