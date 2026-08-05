@@ -544,8 +544,10 @@ def train_model(name, data_directory_dict, epochs, batch_size, save_folderpath):
     
     return directory_dict_filepath
 
-def test_model(model_directory_dict_filepath, model_directory_dict, data_directory_dict):
+def test_model(data_directory_dict_filepath, model_directory_dict_filepath):
     
+    data_directory_dict = read_pickle(data_directory_dict_filepath)
+    model_directory_dict = read_pickle(model_directory_dict_filepath)
     model_metadata = read_pickle(model_directory_dict['metadata'])
     model = load_model(model_directory_dict['model'])
     data_metadata = read_pickle(data_directory_dict['metadata'])
@@ -803,7 +805,7 @@ def test_all_appliance_models(data_directory_dict, model_directory_dict, model_d
     for appliance in tqdm(appliance_names, desc='Appliances'):
         dataset_metadata_filepath = data_directory_dict[appliance]['metadata']
         dataset_metadata = read_pickle(dataset_metadata_filepath)
-        test_model(model_directory_dict['appliance'], model_directory_dict_filepath, batch_size)
+        test_model(data_directory_dict_filepath, model_directory_dict_filepath)
 
 def reconstruct_directory_dict(folderpath):
     
