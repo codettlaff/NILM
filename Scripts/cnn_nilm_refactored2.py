@@ -794,7 +794,7 @@ def train_all_appliance_models(data_directory_dict, save_folderpath, epochs, bat
         model_save_folderpath = os.path.join(save_folderpath, appliance)
         os.makedirs(model_save_folderpath, exist_ok=True)
         model_directory_dict_filepath = train_model(model_name, appliance_dict, epochs, batch_size, model_save_folderpath)
-        all_models_directory_dict[appliance] = read_pickle[model_directory_dict_filepath]
+        all_models_directory_dict[appliance] = read_pickle(model_directory_dict_filepath)
     directory_dict_filepath = os.path.join(save_folderpath, 'directory_dict.pkl')
     write_pickle(all_models_directory_dict, directory_dict_filepath)
     return directory_dict_filepath
