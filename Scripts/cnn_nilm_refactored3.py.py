@@ -255,4 +255,43 @@ def count_unique_timesteps(idx_dict: dict, window_length: int):
         return len(np.unique(timesteps))
     return tuple(count(idx_dict[split][0]) for split in ('train', 'val', 'test'))
 
+def normalize_data(data: dict, idx_dict: dict):
+
+    data_norm = data.copy()
+
+    # Training Indices
+    train_inp, train_out = idx_dict['train']
+    train_X = data['X'][train_inp]
+    train_Y = data['Y'][train_inp]
     
+    # Convert hour-of-day to cyclic features
+    hour = data['X'][:, 0]
+    theta = 2 * np.pi * hour / 24.0
+    sin_hour = np.sin(theta).astype(np.float32)
+    cos_hour = np.cos(theta).astype(np.float32)
+    
+    # Normalize aggregate power using training data only
+    p_min = train_X.min()
+    p_max = train_X.max()
+    p_range = max(p_max - p_min, 1e-12)
+    p_agg = (data['X'] - p_min) / p_range
+    
+    # Normalize appliance powers
+    y_min = train_Y.min(axis=0)
+    y_max = train_Y.max(axis=0)
+    y_range = np.maximum(y_max - y_min, 1e-12)
+    Y = (data['Y'] - y_min) / y_range
+    
+    data_norm['X'] = np.column_stack((sin_hour, cos_hour, p_agg)).astype(np.float32)
+    data_norm['Y'] = Y.astype(np.float32)
+    data_norm['input_labels'] = ['sin_hour', 'cos_hour', 'P_agg']
+    
+    normalization_factors = {
+        'P_agg_min': p_min,
+        'P_agg_max': p_max,
+        'P_apps_min': y_min,
+        'P_apps_max': y_max}
+    
+    data_norm['normalization_factors'] = normalization_factors
+    return data_norm
+        
