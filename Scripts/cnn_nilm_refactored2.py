@@ -807,6 +807,24 @@ def test_all_appliance_models(data_directory_dict, model_directory_dict, batch_s
         dataset_metadata = read_pickle(dataset_metadata_filepath)
         test_model(model_directory_dict['appliance'], dataset_metadata, batch_size)
         
+def reconstruct_directory_dict(folderpath):
+    
+    def build_dict(path):
+        directory = {}
+        for name in sorted(os.listdir(path)):
+            fullpath = os.path.join(path, name)
+            if os.path.isdir(fullpath):
+                directory[name] = build_dict(fullpath)
+            else:
+                key = os.path.splitext(name)[0]
+                directory[key] = fullpath
+        return directory
+    
+    directory_dict = build_dict(folderpath)
+    directory_dict_filepath = os.path.join(folderpath, 'directory_dict.pkl')
+    write_pickle(directory_dict, directory_dict_filepath)
+    return directory_dict_filepath
+        
 if __name__ == '__main__':
     
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -845,16 +863,21 @@ if __name__ == '__main__':
             train_val_test_split,
             ukdale_processed_data_folderpath,
             T_limit)
-    else: ukdale_processed_directory_dict_filepath = os.path.join(ukdale_processed_data_folderpath, 'directory_dict.pkl')
+    else: 
+        ukdale_processed_directory_dict_filepath = reconstruct_directory_dict(ukdale_processed_data_folderpath)
+        # ukdale_processed_directory_dict_filepath = os.path.join(ukdale_processed_data_folderpath, 'directory_dict.pkl')
     ukdale_data_directory_dict = read_pickle(ukdale_processed_directory_dict_filepath)
     
     # Centralize Data
+    centralized_data_folderpath = os.path.join(data_dir, 'ukdale_centralized')
+    os.makedirs(centralized_data_folderpath, exist_ok=True)
     if generate_centralized_data:
-        centralized_data_folderpath = os.path.join(data_dir, 'ukdale_centralized')
-        os.makedirs(centralized_data_folderpath, exist_ok=True)
         centralized_data_directory_dict_filepath = centralize_data(
             ukdale_data_directory_dict,
             centralized_data_folderpath)
+    else:
+        centralized_data_directory_dict_filepath = reconstruct_directory_dict(centralized_data_folderpath)
+    centralized_data_directory_dict = read_pickle(centralized_data_directory_dict_filepath)
     
     # Single House, 1 Model Per Appliance
     directory_dict = read_pickle(ukdale_processed_directory_dict_filepath)
@@ -867,5 +890,5 @@ if __name__ == '__main__':
     model_name = 'ukdale_centralized'
     centralized_model_folderpath = os.path.join(model_name)
     os.makedirs(models_dir, exist_ok=True)
-    train_all_appliance_models(read_pickle(centralized_data_directory_dict_filepath), centralized_model_folderpath, epochs, batch_size)
+    train_all_appliance_models(centralized_data_directory_dict, centralized_model_folderpath, epochs, batch_size)
     
