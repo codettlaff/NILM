@@ -128,7 +128,7 @@ def get_model_performance_info(
         'inference_time_seconds': inference_time_seconds,
         'inference_peak_RAM_MB': inference_peak_RAM_MB}
 
-# Helper Functions
+# Other Helpers
 
 def read_pickle(filepath): 
     with open(filepath, 'rb') as f: return pickle.load(f)
@@ -136,7 +136,7 @@ def read_pickle(filepath):
 def write_pickle(data, filepath): 
     with open(filepath, 'wb') as f: pickle.dump(data,f)
     
-# Data Processing
+# Load and Process Data
 
 def load_ukdale(ukdale_filepath: str):
     data = loadmat(ukdale_filepath)
@@ -161,3 +161,98 @@ def filter_by_timesteps(data: dict, idx: list[int]):
 def filter_by_appliances(data: dict, apps: list[str]):
     idx = np.isin(data['output_labels'], apps)
     return {**data, 'Y': data['Y'][:, idx], 'output_labels': data['output_labels'][idx]}
+
+# Turn Raw Data into Windowed Samples
+
+def precompute_indices(num_timesteps, window_length, stride, train_val_test_split, num_chunks, seed=42):
+    center_offset = window_length // 2
+    guard = window_length - 1
+    guard_left = guard // 2
+    guard_right = guard - guard_left
+    rng = np.random.default_rng(seed)
+    
+    # Calculate numer of chunks in each split.
+    n_train_chunks = int(round(train_val_test_split[0] * num_chunks))
+    n_val_chunks = int(round(train_val_test_split[1] * num_chunks))
+    n_test_chunks = num_chunks - n_train_chunks - n_val_chunks
+    
+    # Calculate the number of timesteps in each split
+    n_train = int(train_val_test_split[0] * num_timesteps)
+    n_val = int(train_val_test_split[1] * num_timesteps)
+    n_test = num_timesteps - n_train - n_val
+    
+    # Divide timesteps over given number of chunks
+    def make_lengths(total_length, num_chunks):
+        lengths = np.full(num_chunks, total_length // num_chunks, dtype=int)
+        lengths[:total_length % num_chunks] += 1
+        return lengths
+    
+    chunk_lengths = np.concatenate([
+        make_lengths(n_train, n_train_chunks),
+        make_lengths(n_val, n_val_chunks),
+        make_lengths(n_test, n_test_chunks)])
+    
+    chunk_labels = (
+        ['train'] * n_train_chunks + 
+        ['val'] * n_val_chunks +
+        ['test'] * n_test_chunks)
+    
+    # Randomly assign chunks to splits
+    perm = rng.permutation(num_chunks)
+    chunk_lengths = chunk_lengths[perm]
+    chunk_labels = [chunk_labels[i] for i in perm]
+    
+    # Compute chunk boundaries
+    starts = np.zeros(num_chunks, dtype=int)
+    ends = np.zeros(num_chunks, dtype=int)
+    start=0
+    for i, length in enumerate(chunk_lengths):
+        starts[i] = start
+        end = min(start + length, num_timesteps)
+        ends[i] = end
+        start = end
+        
+    split = {
+        'train': ([],[]),
+        'val': ([],[]),
+        'test': ([],[])}
+    
+    # Assign window indices to splits.
+    for i in range(num_chunks):
+        start = starts[i]
+        end = ends[i]
+        
+        # Split guard across both sides of a boundary
+        usable_start = start
+        usable_end = end
+        if i > 0 and chunk_labels[i] != chunk_labels[i - 1]: usable_start += guard_right 
+        if i < num_chunks - 1 and chunk_labels[i] != chunk_labels[i + 1]: usable_end -= guard_left 
+        if usable_end >= usable_start + window_length:
+            inp = np.arange(usable_start, usable_end - window_length  + 1, stride) 
+            out = inp + center_offset 
+            split[chunk_labels[i]][0].append(inp) 
+            split[chunk_labels[i]][1].append(out)
+            
+    # Link windows from different chunks and shuffle
+    idx_dict = {}
+    idx_dict['num_blocks'] = num_chunks
+    for label in ['train', 'val', 'test']:
+        if split[label][0]:
+            inp = np.concatenate(split[label][0])
+            out = np.concatenate(split[label][1])
+            perm = rng.permutation(len(inp))
+            idx_dict[label] = (inp[perm], out[perm])
+        else: idx_dict[label] = (np.array([], dtype=int), np.array([], dtype=int))
+        
+    idx_dict['train_val_test_split'] = train_val_test_split
+    return idx_dict
+
+def count_unique_timesteps(idx_dict: dict, window_length: int):
+    
+    def count(inp):
+        if len(inp) == 0: return 0
+        timesteps = np.concatenate([np.arange(i, i + window_length) for i in inp])
+        return len(np.unique(timesteps))
+    return tuple(count(idx_dict[split][0]) for split in ('train', 'val', 'test'))
+
+    
