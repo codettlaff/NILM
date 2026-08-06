@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+peak# -*- coding: utf-8 -*-
 """
 Created on Wed Aug  5 09:53:13 2026
 
@@ -50,6 +50,7 @@ def get_dataset_info(
     output_labels: list(str),
     window_length: int,
     stride: int,
+    normalization_factors: dict[float],
     num_chunks: int,
     processing_env: dict,
     processing_time_seconds: float,
@@ -65,6 +66,7 @@ def get_dataset_info(
         'output_labels': output_labels,
         'window_length': window_length,
         'stride': stride,
+        'normalization_factors': normalization_factors,
         'num_chunks': num_chunks,
         'num_timesteps': num_timesteps,
         'num_samples': num_samples,
@@ -135,6 +137,17 @@ def read_pickle(filepath):
 
 def write_pickle(data, filepath): 
     with open(filepath, 'wb') as f: pickle.dump(data,f)
+    
+def create_directory_dict(folderpath):
+    
+    def build_dict(path):
+        directory = {}
+        for name in sorted(os.listdir(path)):
+            fullpath = os.path.join(path, name)
+            if os.path.dir(fullpath): directory[name] = build_dict(fullpath)
+            else: directory[os.path.splittext(name)[0]] = fullpath
+    directory_dict = build_dict(folderpath)
+    return directory_dict
     
 # Load and Process Data
 
@@ -294,4 +307,91 @@ def normalize_data(data: dict, idx_dict: dict):
     
     data_norm['normalization_factors'] = normalization_factors
     return data_norm
+
+def process_window(x_win):
+    x_win = np.asarray(x_win, dtype=np.float32)
+    p_seq = x_win[:, 2:3]
+    center = center = len(x_win) // 2 
+    time_features = x_win[center, 0:2]
+    return p_seq, time_features
+
+def generate_sample(x_data, y_data, i_inp, i_out, window_length):
+    x_win = x_data[i_inp : i_inp + window_length]
+    if x_win.shape[0] != window_length: return None
+    p_seq, time_features = process_window(x_win)
+    y_target = y_data[i_out]
+    return (p_seq, time_features), y_target
+
+def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderpath):
+    
+    processing_env = get_environment_info()
+    
+    data = normalize_data(data, idx_dict)
+    X, Y = data['X'], data['Y']
+    n_appliances = len(data['output_labels'])
+    
+    n_timesteps_split = count_unique_timesteps(idx_dict, window_length)
+    
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info().rss
+    processing_start_time = time.perf_counter()
+    
+    split_info = []
+    for split in ['train', 'val', 'test']:
+        
+        inp_idx, out_idx = idx_dict[split]
+        n_samples = len(inp_idx)
+        
+        # Allocate Arrays
+        X_p = np.empty((n_samples, window_length, 1), dtype=np.float32)
+        X_time = np.empty((n_samples, 2), dtype=np.float32)
+        Y_p = np.empty((n_samples, n_appliances), dtype=np.float32)
+        peak_ram = max(peak_ram, process.memory_info().rss)
+    
+        # Generate Samples
+        for j, (i_inp, i_out) in enumerate(zip(inp_idx, out_idx)):
+            (p_seq, time_features), y_target = generate_sample(X, Y, i_inp, i_out, window_length)
+            peak_ram = max(peak_ram, process.memory_info().rss)
+            X_p[j] = p_seq
+            X_time[j] = time_features
+            Y_p[j] = y_target
+    
+        split_size = (X_p.nbytes + X_time.nbytes + Y_p.nbytes)
+        
+        # Output Directory
+        split_dir = os.path.join(save_folderpath, split)
+        os.makedirs(split_dir, exist_ok=True)
+    
+        # Save Arrays
+        np.save(os.path.join(split_dir, 'X_p.npy'), X_p)
+        np.save(os.path.join(split_dir, 'X_time.npy'), X_time)
+        np.save(os.path.join(split_dir, 'Y_p'), Y_p)
+        peak_ram = max(peak_ram, process.memory_info().rss)
+        
+        split_info.append(get_dataset_split_info(n_timesteps_split[0], n_samples, split_size))
+    
+    processing_time_seconds = time.perf_counter() - processing_start_time()
+        
+    # Metadata
+    name = os.path.basename(save_folderpath)
+    normalization_factors = data['normalization_factors']
+    metadata = get_dataset_info(
+        name,
+        data['input_labels'],
+        data['output_labels'],
+        window_length,
+        stride,
+        normalization_factors,
+        num_chunks,
+        processing_env,
+        processing_time_seconds,
+        peak_ram / 1024**2,
+        idx_dict['train_val_test'],
+        split_info[0],
+        split_info[1],
+        split_info[2])
+    metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
+    write_pickle(metadata, metadata_filepath)
+    
+
         
