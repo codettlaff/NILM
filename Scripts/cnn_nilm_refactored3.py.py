@@ -83,7 +83,7 @@ def get_dataset_info(
 def get_model_info(
         name: str,
         model: Model,
-        dataset_info: dict,
+        training_dataset_info: dict,
         train_env: dict,
         train_time_seconds: float,
         epochs_requested: int,
@@ -99,7 +99,7 @@ def get_model_info(
         'num_trainable_layers': sum(not isinstance(layer, tf.keras.layers.InputLayer) for layer in model.layers),
         'layer_sequence': [f'{layer.name}: {layer.__class__.__name__} -> {layer.output.shape}' for layer in model.layers],
         'trainable_parameters': model.count_params(),
-        'dataset_info': dataset_info,
+        'training_dataset_info': training_dataset_info,
         'train_env': train_env,
         'train_time_seconds': train_time_seconds,
         'epochs_requested': epochs_requested,
@@ -541,4 +541,71 @@ def train_model(
         model_size_MB)
     metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
     write_pickle(model_metadata, metadata_filepath)
+    
+# Model Testing
+
+def test_model(dataset_directory_dict, model_directory_dict, results_save_filepath=None):
+    
+    model_metadata = read_pickle(model_directory_dict['metadata'])
+    model = load_model(model_directory_dict['model'])
+    
+    dataset_metadata = read_pickle(dataset_directory_dict['metadata'])
+    test_data = load_processed_data(dataset_directory_dict, 'test')
+    
+    y_min = dataset_metadata['normalization_factors']['y_min']
+    y_max = dataset_metadata['normalization_factors']['y_max']
+    n_test_samples = dataset_metadata['test_split']['num_samples']
+    batch_size = model_metadata['batch_size']
+    
+    y_true_all, y_pred_all = [], []
+    inference_env = get_environment_info()
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info().rss
+    inference_start_time = time.perf_counter()
+    
+    # Inference
+    for i in tqdm(range(0, n_test_samples, batch_size), desc='Inference'):
+        batch_idx = np.arange(i, min(i + batch_size, n_test_samples))
+        (X_p, X_time), Y_true = generate_batch(test_data, batch_idx)
+        Y_pred = model.predict_on_batch([X_p, X_time])
+        peak_ram = max(peak_ram, process.memory_info().rss)
+        y_true_all.append(Y_true)
+        y_pred_all.append(Y_pred)
+    inference_time_seconds = time.perf_counter() - inference_start_time
+    y_true = np.vstack(y_true_all)
+    y_pred = np.vstack(y_pred_all)
+    
+    # Metrics (Normalized)
+    mse_norm = np.mean((y_pred - y_true)**2)
+    rmse_norm = np.sqrt(mse_norm)
+    
+    # Convert back to Watts
+    y_true_denorm = y_true * (y_max - y_min) + y_min
+    y_pred_denorm = y_pred * (y_max - y_min) + y_min
+    
+    # Metrics
+    mse_denorm = np.mean((y_pred_denorm - y_true_denorm)**2)
+    rmse_denorm = np.sqrt(mse_denorm)
+    abs_error = np.abs(y_pred_denorm - y_true_denorm)
+    mae = np.mean(abs_error)
+    eacc = 1.0 - (np.sum(abs_error) / (2.0 * np.sum(y_true_denorm)))
+    
+    # Save Results
+    if results_save_filepath: np.savez(results_save_filepath, y_true=y_true_denorm, y_pred=y_pred_denorm)
+    
+    # Update Model Metadata
+    model_performance = get_model_performance_info(
+        mse_norm,
+        rmse_norm,
+        mse_denorm,
+        rmse_denorm,
+        mae,
+        eacc,
+        inference_env,
+        inference_time_seconds,
+        peak_ram / 1024**2)
+    
+    model_metadata['testing_dataset'] = dataset_metadata
+    model_metadata['performance'] = model_performance
+    write_pickle(model_metadata, model_directory_dict['metadata'])
     
