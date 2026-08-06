@@ -415,7 +415,7 @@ def prepare_data(
     
 # Model Training
     
-def load_processed_data(directory_dict: dict, split: dict):
+def load_processed_data(directory_dict: dict, split: str):
     with open(directory_dict['metadata'], 'rb') as f: metadata = pickle.load(f)
     processed_data_dict = {
         'X_p': np.load(directory_dict[split]['X_p'], mmap_mode='r'),
@@ -454,6 +454,91 @@ def build_model(window_length: int):
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='mse')
     return model
 
-
-
+def train_model(
+    dataset_directory_dict: dict,
+    epochs: int,
+    batch_size: int,
+    save_folderpath: str):
+    
+    name = os.path.basename(save_folderpath)
+    train_env = get_environment_info()
+    
+    dataset_metadata = read_pickle(dataset_directory_dict['metadata'])
+    window_length = dataset_metadata['window_length']
+    model = build_model(window_length)
+    train_data = load_processed_data(dataset_directory_dict, 'train')
+    val_data = load_processed_data(dataset_directory_dict, 'val')
+    n_samples_train = len(train_data['Y_p'])
+    n_samples_val = len(val_data['Y_p'])
+    
+    best_val_loss = np.inf
+    epochs_completed = 0
+    patience = 5
+    patience_counter = 0
+    
+    process = psutil.Process(os.getpid())
+    peak_ram = process.memory_info().rss
+    train_loss_history, val_loss_history = [],[]
+    train_start_time = time.perf_counter()
+    
+    for epoch in tqdm(range(epochs), desc='Epochs'):
         
+        # Training
+        train_loss = 0.0
+        perm = np.random.permutation(n_samples_train)
+        n_train_batches = 0
+        for i in tqdm(range(0, n_samples_train, batch_size), desc='Training', leave=False):
+            batch_idx = perm[i: i + batch_size]
+            (X_p, X_time), Y_p = generate_batch(train_data, batch_idx)
+            loss = model.train_on_batch([X_p, X_time], Y_p)
+            peak_ram = max(peak_ram, process.memory_info().rss)
+            train_loss += loss
+            n_train_batches += 1
+        train_loss /= n_train_batches
+        train_loss_history.append(train_loss)
+        
+        # Validation
+        val_loss = 0.0
+        num_val_batches = 0
+        for i in tqdm(range(0, n_samples_val, batch_size), desc='Validation', leave=False):
+            batch_idx = np.arange(i, min(i + batch_size, n_samples_val))
+            (X_p, X_time), Y_p = generate_batch(val_data, batch_idx)
+            loss = model.test_on_batch([X_p, X_time], Y_p)
+            peak_ram = max(peak_ram, process.memory_info().rss)
+            val_loss += loss
+            num_val_batches += 1
+        val_loss /= num_val_batches
+        val_loss_history.append(val_loss)
+        best_val_loss = min(best_val_loss, val_loss)
+        epochs_completed += 1 
+        
+        # Early Stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+        else: 
+            patience_counter += 1
+            if patience_counter >= patience: break
+        
+    train_time_seconds = time.perf_counter() - train_start_time
+    model_filepath = os.path.join(save_folderpath, 'model.keras')
+    model.save(model_filepath)
+    model_size_MB = os.path.getsize(model_filepath) / 1024**2 
+    
+    # Model Metadata
+    model_metadata = get_model_info(
+        name,
+        model,
+        dataset_metadata,
+        train_env,
+        train_time_seconds,
+        epochs,
+        epochs_completed,
+        batch_size,
+        train_loss_history,
+        val_loss_history,
+        peak_ram / 1024**2,
+        model_size_MB)
+    metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
+    write_pickle(model_metadata, metadata_filepath)
+    
