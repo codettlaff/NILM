@@ -1,4 +1,4 @@
-peak# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Created on Wed Aug  5 09:53:13 2026
 
@@ -11,6 +11,7 @@ import platform
 import psutil
 
 from tqdm import tqdm
+from numpy.typing import NDArray
 import numpy as np
 import pickle
 
@@ -132,13 +133,13 @@ def get_model_performance_info(
 
 # Other Helpers
 
-def read_pickle(filepath): 
+def read_pickle(filepath: str): 
     with open(filepath, 'rb') as f: return pickle.load(f)
 
-def write_pickle(data, filepath): 
+def write_pickle(data: dict, filepath: str): 
     with open(filepath, 'wb') as f: pickle.dump(data,f)
     
-def create_directory_dict(folderpath):
+def create_directory_dict(folderpath: str):
     
     def build_dict(path):
         directory = {}
@@ -177,7 +178,14 @@ def filter_by_appliances(data: dict, apps: list[str]):
 
 # Turn Raw Data into Windowed Samples
 
-def precompute_indices(num_timesteps, window_length, stride, train_val_test_split, num_chunks, seed=42):
+def precompute_indices(
+    num_timesteps: int, 
+    window_length: int, 
+    stride: int, 
+    train_val_test_split: tuple[float, float, float], 
+    num_chunks: int, 
+    seed=42):
+    
     center_offset = window_length // 2
     guard = window_length - 1
     guard_left = guard // 2
@@ -308,21 +316,33 @@ def normalize_data(data: dict, idx_dict: dict):
     data_norm['normalization_factors'] = normalization_factors
     return data_norm
 
-def process_window(x_win):
+def process_window(x_win: NDArray[np.float32]):
     x_win = np.asarray(x_win, dtype=np.float32)
     p_seq = x_win[:, 2:3]
     center = center = len(x_win) // 2 
     time_features = x_win[center, 0:2]
     return p_seq, time_features
 
-def generate_sample(x_data, y_data, i_inp, i_out, window_length):
+def generate_sample(
+    x_data: NDArray[np.float32], 
+    y_data: NDArray[np.float32], 
+    i_inp: int, 
+    i_out: int, 
+    window_length: int):
+    
     x_win = x_data[i_inp : i_inp + window_length]
     if x_win.shape[0] != window_length: return None
     p_seq, time_features = process_window(x_win)
     y_target = y_data[i_out]
     return (p_seq, time_features), y_target
 
-def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderpath):
+def prepare_data(
+    data: dict, 
+    idx_dict: dict, 
+    num_chunks: int, 
+    window_length: int, 
+    stride: int, 
+    save_folderpath: str):
     
     processing_env = get_environment_info()
     
@@ -393,5 +413,47 @@ def prepare_data(data, idx_dict, num_chunks, window_length, stride, save_folderp
     metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
     write_pickle(metadata, metadata_filepath)
     
+# Model Training
+    
+def load_processed_data(directory_dict: dict, split: dict):
+    with open(directory_dict['metadata'], 'rb') as f: metadata = pickle.load(f)
+    processed_data_dict = {
+        'X_p': np.load(directory_dict[split]['X_p'], mmap_mode='r'),
+        'X_time': np.load(directory_dict[split]['X_time'], mmap_mode='r'),
+        'Y_p': np.load(directory_dict[split]['Y_p'], mmap_mode='r'),
+        'normalization_factors': metadata['normalization_factors']}
+    return processed_data_dict
+
+def generate_batch(processed_data_dict: dict, idx_list: list[int]):
+    X_p_batch = processed_data_dict['X_p'][idx_list]
+    X_time_batch = processed_data_dict['X_time'][idx_list]
+    Y_p_batch = processed_data_dict['Y_p'][idx_list]
+    return (X_p_batch, X_time_batch), Y_p_batch
+
+def build_model(window_length: int):
+    
+    # CNN branch
+    inp_power = layers.Input(shape=(window_length,1), name='power_input')
+    x1 = layers.Conv1D(32, 5, activation='relu', padding='same')(inp_power)
+    x1 = layers.Conv1D(64, 5, activation='relu', padding='same')(x1)
+    x1 = layers.Conv1D(128, 3, activation='relu', padding='same')(x1)
+    x1 = layers.GlobalAveragePooling1D()(x1)
+    
+    # MLP branch
+    inp_time = layers.Input(shape=(2,), name='time_input')
+    x2 = layers.Dense(16, activation='relu')(inp_time)
+    x2 = layers.Dense(64, activation='relu')(x2)
+    
+    # Concatenate
+    x = layers.Concatenate()([x1, x2])
+    x = layers.Dense(128, activation='relu')(x)
+    x = layers.Dense(64, activation='relu')(x)
+    
+    out = layers.Dense(1, name='power_output')(x)
+    model = models.Model(inputs=[inp_power, inp_time], outputs=out)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='mse')
+    return model
+
+
 
         
