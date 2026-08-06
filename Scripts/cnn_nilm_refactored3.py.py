@@ -609,3 +609,9 @@ def test_model(dataset_directory_dict, model_directory_dict, results_save_filepa
     model_metadata['performance'] = model_performance
     write_pickle(model_metadata, model_directory_dict['metadata'])
     
+# Automation
+
+def create_appliance_datasets(raw_data_filepath, window_length, stride, num_chunks, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
+    
+    data = load_data(raw_data_filepath)
+    if T_limit: 
