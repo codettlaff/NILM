@@ -168,8 +168,9 @@ def load_ukdale(ukdale_filepath: str):
         'input_labels': input_labels,
         'output_labels': output_labels}
 
-def filter_by_timesteps(data: dict, idx: list[int]):
-    return {k: (v[idx] if isinstance(v, np.ndarray) and len(v) == data['T'] else v)
+def filter_by_timesteps(data: dict, idx: tuple[int, int]):
+    start, end = idx
+    return {k: (v[start:end] if isinstance(v, np.ndarray) and len(v) == data['T'] else v)
             for k, v in data.items()}
 
 def filter_by_appliances(data: dict, apps: list[str]):
@@ -613,5 +614,28 @@ def test_model(dataset_directory_dict, model_directory_dict, results_save_filepa
 
 def create_appliance_datasets(raw_data_filepath, window_length, stride, num_chunks, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
     
-    data = load_data(raw_data_filepath)
-    if T_limit: 
+    data = load_ukdale(raw_data_filepath)
+    if T_limit: data = filter_by_timesteps(data, (0, T_limit))
+    if target_appliances: data = filter_by_appliances(data, target_appliances)
+    idx_dict = precompute_indices(
+        num_timesteps=len(data['X']),
+        window_length=window_length,
+        stride=stride,
+        train_val_test_split=train_val_test_split,
+        num_chunks=num_chunks,
+        seed=42)
+    
+    # One dataset per appliance
+    for out_label in data['output_labels']:
+        app = out_label.split('_')[1]
+        app_save_folderpath = os.path.join(save_folderpath, app)
+        os.makedirs(app_save_folderpath, exist_ok=True)
+        prepare_data(
+            data,
+            idx_dict,
+            num_chunks,
+            window_length,
+            stride,
+            app_save_folderpath)
+    
+    
