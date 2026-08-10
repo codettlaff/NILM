@@ -777,4 +777,19 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
         centralized_metadata_filepath = directory_dict[appliance]['metadata']
         write_pickle(centralized_metadata, centralized_metadata_filepath)
         
+def train_all_appliance_models(data_folderpath, save_folderpath, epochs, batch_size):
+    data_directory_dict = create_directory_dict(data_folderpath)
+    model_base_name = os.path.basename(save_folderpath)
+    for appliance, appliance_dict in data_directory_dict.items():
+        model_name = f'{model_base_name}_{appliance}'
+        model_save_folderpath = os.path.join(save_folderpath, model_name)
+        os.makedirs(model_save_folderpath, exist_ok=True)
+        train_model(model_name, appliance_dict, epochs, batch_size, model_save_folderpath)
+
+def test_all_appliance_models(data_folderpath, models_folderpath, batch_size):
+    data_directory_dict = create_directory_dict(data_folderpath)
+    models_directory_dict = create_directory_dict(models_folderpath)
+    appliance_names = models_directory_dict.keys()
+    for appliance in tqdm(appliance_names, desc='Appliances'):
+        test_model(data_directory_dict, models_directory_dict)
     
