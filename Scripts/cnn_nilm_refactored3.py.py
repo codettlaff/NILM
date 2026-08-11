@@ -896,8 +896,7 @@ if __name__ == '__main__':
     
     # Script Tasks
     generate_house_data = False # Done
-    generate_centralized_data = True
-    # Done
+    generate_centralized_data = False # Done
     train_single_house_model = False # Done
     train_centralized_model = True # Done
     test_single_house_model = False # Done
