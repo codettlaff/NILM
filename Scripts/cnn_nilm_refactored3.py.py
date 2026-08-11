@@ -804,6 +804,41 @@ def test_all_appliance_models(data_folderpath, models_folderpath, batch_size):
         appliance_data_directory_dict = data_directory_dict[appliance_name]
         test_model(appliance_data_directory_dict, appliance_model_directory_dict)
         
+def display_model_information(model_metadata_filepath):
+    metadata = read_pickle(model_metadata_filepath)
+
+    print(f"\n{'=' * 60}")
+    print(f"MODEL: {metadata['name']}")
+    print(f"{'=' * 60}")
+
+    print("\nArchitecture")
+    print(f"  Layers:              {metadata['num_layers']}")
+    print(f"  Trainable layers:    {metadata['num_trainable_layers']}")
+    print(f"  Trainable parameters:{metadata['trainable_parameters']:,}")
+    print("  Layer sequence:")
+    for layer in metadata['layer_sequence']:
+        print(f"    {layer}")
+
+    print("\nTraining")
+    print(f"  Epochs:              {metadata['epochs_completed']} / {metadata['epochs_requested']}")
+    print(f"  Batch size:          {metadata['batch_size']}")
+    print(f"  Training time:       {metadata['train_time_seconds']:.2f} s")
+    print(f"  Peak RAM:             {metadata['train_peak_RAM_MB']:.2f} MB")
+    print(f"  Model size:           {metadata['size_MB']:.2f} MB")
+
+    print("\nLoss")
+    print(f"  Final train loss:     {metadata['train_loss_history'][-1]:.6f}")
+    print(f"  Final validation loss: {metadata['val_loss_history'][-1]:.6f}")
+
+    print("\nPerformance")
+    performance = metadata.get('performance', {})
+    for key in ('mse_norm', 'rmse_norm', 'mse', 'rmse', 'mae', 'eacc',
+                'inference_time_seconds', 'inference_peak_RAM_MB'):
+        if key in performance:
+            print(f"  {key}: {performance[key]}")
+
+    print(f"\n{'=' * 60}\n")
+        
 if __name__ == '__main__':
     
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -826,7 +861,7 @@ if __name__ == '__main__':
     train_single_house_model = False # Done
     train_centralized_model = False # Done
     test_single_house_model = False # Done
-    test_centralized_model = True
+    test_centralized_model = False # Done
 
     # Pre-Process Data
     ukdale_folderpath = os.path.join(data_dir, 'ukdale')
@@ -867,3 +902,15 @@ if __name__ == '__main__':
     # Test centralized model
     if test_centralized_model:
         test_all_appliance_models(centralized_data_folderpath, centralized_model_folderpath, batch_size)
+        
+    # Compare Results
+    single_house_models = create_directory_dict(house1_model_folderpath)
+    centralized_models = create_directory_dict(centralized_model_folderpath)
+    
+    for model_name, directory_dict in single_house_models.items():
+        metadata_filepath = directory_dict['metadata']
+        display_model_information(metadata_filepath)
+    
+    for model_name, directory_dict in centralized_models.items():
+        metadata_filepath = directory_dict['metadata']
+        display_model_information(metadata_filepath)
