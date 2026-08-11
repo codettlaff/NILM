@@ -47,8 +47,8 @@ def get_dataset_split_info(
 
 def get_dataset_info(
     name:str,
-    input_labels: list(str),
-    output_labels: list(str),
+    input_labels: list[str],
+    output_labels: list[str],
     window_length: int,
     stride: int,
     normalization_factors: dict[float],
@@ -145,8 +145,9 @@ def create_directory_dict(folderpath: str):
         directory = {}
         for name in sorted(os.listdir(path)):
             fullpath = os.path.join(path, name)
-            if os.path.dir(fullpath): directory[name] = build_dict(fullpath)
-            else: directory[os.path.splittext(name)[0]] = fullpath
+            if os.path.isdir(fullpath): directory[name] = build_dict(fullpath)
+            else: directory[os.path.splitext(name)[0]] = fullpath
+        return directory
     directory_dict = build_dict(folderpath)
     return directory_dict
     
@@ -257,7 +258,7 @@ def precompute_indices(
             
     # Link windows from different chunks and shuffle
     idx_dict = {}
-    idx_dict['num_blocks'] = num_chunks
+    idx_dict['num_chunks'] = num_chunks
     for label in ['train', 'val', 'test']:
         if split[label][0]:
             inp = np.concatenate(split[label][0])
@@ -358,6 +359,7 @@ def prepare_data(
     processing_start_time = time.perf_counter()
     
     split_info = []
+    i = 0
     for split in ['train', 'val', 'test']:
         
         inp_idx, out_idx = idx_dict[split]
@@ -389,9 +391,10 @@ def prepare_data(
         np.save(os.path.join(split_dir, 'Y_p'), Y_p)
         peak_ram = max(peak_ram, process.memory_info().rss)
         
-        split_info.append(get_dataset_split_info(n_timesteps_split[0], n_samples, split_size))
+        split_info.append(get_dataset_split_info(n_timesteps_split[i], n_samples, split_size/1024**2))
+        i += 1
     
-    processing_time_seconds = time.perf_counter() - processing_start_time()
+    processing_time_seconds = time.perf_counter() - processing_start_time
         
     # Metadata
     name = os.path.basename(save_folderpath)
@@ -407,10 +410,8 @@ def prepare_data(
         processing_env,
         processing_time_seconds,
         peak_ram / 1024**2,
-        idx_dict['train_val_test'],
-        split_info[0],
-        split_info[1],
-        split_info[2])
+        idx_dict['train_val_test_split'],
+        split_info)
     metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
     write_pickle(metadata, metadata_filepath)
     
@@ -553,8 +554,8 @@ def test_model(dataset_directory_dict, model_directory_dict, results_save_filepa
     dataset_metadata = read_pickle(dataset_directory_dict['metadata'])
     test_data = load_processed_data(dataset_directory_dict, 'test')
     
-    y_min = dataset_metadata['normalization_factors']['y_min']
-    y_max = dataset_metadata['normalization_factors']['y_max']
+    y_min = dataset_metadata['normalization_factors']['P_apps_min']
+    y_max = dataset_metadata['normalization_factors']['P_apps_max']
     n_test_samples = dataset_metadata['test_split']['num_samples']
     batch_size = model_metadata['batch_size']
     
@@ -606,7 +607,7 @@ def test_model(dataset_directory_dict, model_directory_dict, results_save_filepa
         inference_time_seconds,
         peak_ram / 1024**2)
     
-    model_metadata['testing_dataset'] = dataset_metadata
+    model_metadata['testing_dataset_info'] = dataset_metadata
     model_metadata['performance'] = model_performance
     write_pickle(model_metadata, model_directory_dict['metadata'])
     
@@ -638,10 +639,10 @@ def create_appliance_datasets(raw_data_filepath, window_length, stride, num_chun
             stride,
             app_save_folderpath)
         
-def create_house_datasets(raw_data_filepath_list, window_length, stride, num_chunks, train_val_test_split, save_folderpath):
+def create_house_datasets(raw_data_filepath_list, window_length, stride, num_chunks, train_val_test_split, save_folderpath, T_limit=None, target_appliances=None):
     
     for raw_data_filepath in raw_data_filepath_list: 
-        house_name = os.path.basename(raw_data_filepath)
+        house_name = os.path.basename(raw_data_filepath).split('.')[0]
         house_save_folderpath = os.path.join(save_folderpath, house_name)
         create_appliance_datasets(
             raw_data_filepath,
@@ -649,7 +650,9 @@ def create_house_datasets(raw_data_filepath_list, window_length, stride, num_chu
             stride,
             num_chunks,
             train_val_test_split,
-            house_save_folderpath)
+            house_save_folderpath,
+            T_limit,
+            target_appliances)
     
 def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
     
@@ -663,7 +666,7 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
                 dtype = arr.dtype
         
         # Create memory-mapped output array
-        output = np.lib.format.open_memmap(output_filepath, mode='w', dtype=dtype, shape=(total_rows, *shape))
+        output = np.lib.format.open_memmap(output_filepath, mode='w+', dtype=dtype, shape=(total_rows, *shape))
         
         # Copy one dataset at a time
         start = 0
@@ -690,7 +693,7 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
                 metadata = read_pickle(appliance_dict['metadata'])
                 
                 # First occurance of this appliance
-                if appliance not in metadata_dict:
+                if appliance not in metadata_dict.keys():
                     metadata_dict[appliance] = [metadata]
                     X_p_list[appliance] = {split: [] for split in splits}
                     X_time_list[appliance] = {split: [] for split in splits}
@@ -699,8 +702,14 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
                 # Verify shared metadata fields match previous homes
                 else:
                     reference = metadata_dict[appliance][0]
-                    if any(metadata[field] != reference[field] for field in fields): continue # skip appliance
+                    if any(not np.array_equal(metadata[field], reference[field]) for field in fields): continue # skip appliance
                     metadata_dict[appliance].append(metadata)
+                    
+                # Add filepaths
+                for split in splits:
+                    X_p_list[appliance][split].append(appliance_dict[split]['X_p'])
+                    X_time_list[appliance][split].append(appliance_dict[split]['X_time'])
+                    Y_list[appliance][split].append(appliance_dict[split]['Y_p'])
                     
         return X_p_list, X_time_list, Y_list, metadata_dict
     
@@ -714,7 +723,9 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
             'Y_p': Y_lists}.items():
         for appliance, split_dict in file_lists.items():
             for split, filepath_list in split_dict.items():
-                concatenated_dataset_filepath = os.path.join(save_folderpath, appliance, split, name)
+                concatenated_dataset_folderpath = os.path.join(save_folderpath, appliance, split)
+                os.makedirs(concatenated_dataset_folderpath, exist_ok=True)
+                concatenated_dataset_filepath = os.path.join(concatenated_dataset_folderpath, name + '.npy')
                 concatenate_datasets(filepath_list, concatenated_dataset_filepath)
     
     # accumulate metadata
@@ -728,16 +739,16 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
         peak_RAM_MB = 0.0
         for metadata in metadata_list:
             nf = metadata['normalization_factors']
-            global_nfs['x_min'] = min(global_nfs['x_min'], nf['x_min'])
-            global_nfs['x_max'] = max(global_nfs['x_max'], nf['x_max'])
-            global_nfs['y_min'] = min(global_nfs['y_min'], nf['y_min'])
-            global_nfs['y_max'] = max(global_nfs['y_max'], nf['y_max'])
-            total_timesteps += metadata['total_timesteps']
-            processing_time += metadata['processing_time']
+            global_nfs['P_agg_min'] = min(global_nfs['P_agg_min'], nf['P_agg_min'])
+            global_nfs['P_agg_max'] = max(global_nfs['P_agg_max'], nf['P_agg_max'])
+            global_nfs['P_apps_min'] = np.minimum(global_nfs['P_apps_min'], nf['P_apps_min'])
+            global_nfs['P_apps_max'] = np.maximum(global_nfs['P_apps_max'], nf['P_apps_max'])
+            total_timesteps += metadata['num_timesteps']
+            processing_time += metadata['processing_time_seconds']
             peak_RAM_MB = max(peak_RAM_MB, metadata['processing_peak_RAM_MB'])
         centralized_metadata['normalization_factors'] = global_nfs
-        centralized_metadata['total_timesteps'] = total_timesteps
-        centralized_metadata['processing_time'] = processing_time
+        centralized_metadata['num_timesteps'] = total_timesteps
+        centralized_metadata['processing_time_seconds'] = processing_time
         centralized_metadata['processing_peak_RAM_MB'] = peak_RAM_MB
         
         # accumulate split info
@@ -751,7 +762,7 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
                 split_num_samples += split_info['num_samples']
                 split_size_MB += split_info['size_MB']
                 
-            split_info = get_dataset_split_info(split_num_timesteps, split_num_samples, split_size_MB*1024**2)
+            split_info = get_dataset_split_info(split_num_timesteps, split_num_samples, split_size_MB)
             num_samples += split_num_samples
             num_timesteps += split_num_timesteps
             size_MB += split_size_MB
@@ -762,19 +773,16 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
         centralized_metadata['size_MB'] = size_MB
         
         centralized_metadata['name'] = os.path.basename(save_folderpath) + f'_{appliance}'
-        timesteps_used = metadata['timesteps_used']
-        centralized_metadata['timesteps_used'] = timesteps_used
-        centralized_metadata['timesteps_discarded'] = total_timesteps - timesteps_used
-        train_split = centralized_metadata['train_split']['num_samples'] / centralized_metadata['num_samples']
-        val_split = centralized_metadata['val_split']['num_samples'] / centralized_metadata['num_samples']
-        test_split = centralized_metadata['test_split']['num_samples'] / centralized_metadata['num_samples']
+        train_split = round(centralized_metadata['train_split']['num_samples'] / centralized_metadata['num_samples'], 2)
+        val_split = round(centralized_metadata['val_split']['num_samples'] / centralized_metadata['num_samples'], 2)
+        test_split = round(centralized_metadata['test_split']['num_samples'] / centralized_metadata['num_samples'], 2)
         train_val_test_split = [train_split, val_split, test_split]
         centralized_metadata['train_val_test_split'] = train_val_test_split
         
         centralized_metadata.pop('processing_env') # No longer makes sense, since every house may have a different processing env.
         centralized_metadata.pop('num_chunks') # No longer useful, every house may have used different number of chunks.
         
-        centralized_metadata_filepath = directory_dict[appliance]['metadata']
+        centralized_metadata_filepath = os.path.join(save_folderpath, appliance, 'metadata.pkl')
         write_pickle(centralized_metadata, centralized_metadata_filepath)
         
 def train_all_appliance_models(data_folderpath, save_folderpath, epochs, batch_size):
@@ -784,12 +792,78 @@ def train_all_appliance_models(data_folderpath, save_folderpath, epochs, batch_s
         model_name = f'{model_base_name}_{appliance}'
         model_save_folderpath = os.path.join(save_folderpath, model_name)
         os.makedirs(model_save_folderpath, exist_ok=True)
-        train_model(model_name, appliance_dict, epochs, batch_size, model_save_folderpath)
+        train_model(appliance_dict, epochs, batch_size, model_save_folderpath)
 
 def test_all_appliance_models(data_folderpath, models_folderpath, batch_size):
     data_directory_dict = create_directory_dict(data_folderpath)
     models_directory_dict = create_directory_dict(models_folderpath)
-    appliance_names = models_directory_dict.keys()
-    for appliance in tqdm(appliance_names, desc='Appliances'):
-        test_model(data_directory_dict, models_directory_dict)
+    model_names = models_directory_dict.keys()
+    for model_name in tqdm(model_names, desc='Appliance Models'):
+        appliance_model_directory_dict = models_directory_dict[model_name]
+        appliance_name = model_name.split('_')[-1]
+        appliance_data_directory_dict = data_directory_dict[appliance_name]
+        test_model(appliance_data_directory_dict, appliance_model_directory_dict)
+        
+if __name__ == '__main__':
     
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    data_dir = os.path.join(base_dir, 'data')
+    models_dir = os.path.join(base_dir, 'models')
+    os.makedirs(models_dir, exist_ok=True)
+    
+    # Settings
+    T_limit = 172800 # Two Days
+    train_val_test_split = [0.7, 0.15, 0.15]
+    window_length = 300 # 5 Minutes
+    stride = 1 
+    num_chunks = 100
+    epochs = 1 #20 
+    batch_size = 32
+    
+    # Script Tasks
+    generate_house_data = False # Done
+    generate_centralized_data = False # Done
+    train_single_house_model = False # Done
+    train_centralized_model = False # Done
+    test_single_house_model = False # Done
+    test_centralized_model = True
+
+    # Pre-Process Data
+    ukdale_folderpath = os.path.join(data_dir, 'ukdale')
+    ukdale_processed_folderpath = os.path.join(data_dir, 'ukdale_processed')
+    os.makedirs(ukdale_processed_folderpath, exist_ok=True)
+    ukdale_filepath_list = [
+        os.path.join(ukdale_folderpath, f)
+        for f in os.listdir(ukdale_folderpath)
+        if f.endswith('.mat')]
+    
+    if generate_house_data:
+        create_house_datasets(ukdale_filepath_list, window_length, stride, num_chunks, train_val_test_split, ukdale_processed_folderpath, T_limit)
+        
+    centralized_data_folderpath = os.path.join(data_dir, 'ukdale_centralized')
+    os.makedirs(centralized_data_folderpath, exist_ok=True)
+    house_name_list = [f for f in os.listdir(ukdale_processed_folderpath) if os.path.isdir(os.path.join(ukdale_processed_folderpath, f))]
+    house_folderpath_list = [os.path.join(ukdale_processed_folderpath, f) for f in house_name_list]
+    if generate_centralized_data:
+        centralize_data(house_folderpath_list, centralized_data_folderpath)
+        
+    # Train single house, one model per appliance
+    house1_model_folderpath = os.path.join(models_dir, 'ukdale1')
+    os.makedirs(house1_model_folderpath, exist_ok=True)
+    house1_data_folderpath = house_folderpath_list[0]
+    if train_single_house_model:
+        train_all_appliance_models(house1_data_folderpath, house1_model_folderpath, epochs, batch_size)
+        
+    # Train centralized model, one model per appliance
+    centralized_model_folderpath = os.path.join(models_dir, 'ukdale_centralized')
+    os.makedirs(centralized_model_folderpath, exist_ok=True)
+    if train_centralized_model:
+        train_all_appliance_models(centralized_data_folderpath, centralized_model_folderpath, epochs, batch_size)
+        
+    # Test single house, one model per appliance
+    if test_single_house_model:
+        test_all_appliance_models(house1_data_folderpath, house1_model_folderpath, batch_size)
+        
+    # Test centralized model
+    if test_centralized_model:
+        test_all_appliance_models(centralized_data_folderpath, centralized_model_folderpath, batch_size)
