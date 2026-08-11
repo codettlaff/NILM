@@ -657,8 +657,14 @@ def create_house_datasets(raw_data_filepath_list, window_length, stride, num_chu
 def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
     
     def concatenate_datasets(npy_filepath_list, output_filepath):
-        total_rows, shape, dtype = 0, None, None
+        valid_filepaths = []
         for filepath in npy_filepath_list:
+            arr = np.load(filepath, mmap_mode='r')
+            if np.isnan(arr).any(): continue
+            valid_filepaths.append(filepath)
+        
+        total_rows, shape, dtype = 0, None, None
+        for filepath in valid_filepaths:
             arr = np.load(filepath, mmap_mode='r')
             total_rows += arr.shape[0]
             if shape is None:
@@ -670,7 +676,7 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
         
         # Copy one dataset at a time
         start = 0
-        for filepath in npy_filepath_list:
+        for filepath in valid_filepaths:
             arr = np.load(filepath, mmap_mode='r')
             end = start + arr.shape[0]
             output[start:end] = arr
@@ -779,8 +785,8 @@ def centralize_data(folderpath_list, save_folderpath, target_appliances=None):
         train_val_test_split = [train_split, val_split, test_split]
         centralized_metadata['train_val_test_split'] = train_val_test_split
         
-        centralized_metadata.pop('processing_env') # No longer makes sense, since every house may have a different processing env.
-        centralized_metadata.pop('num_chunks') # No longer useful, every house may have used different number of chunks.
+        # centralized_metadata.pop('processing_env') # No longer makes sense, since every house may have a different processing env.
+        # centralized_metadata.pop('num_chunks') # No longer useful, every house may have used different number of chunks.
         
         centralized_metadata_filepath = os.path.join(save_folderpath, appliance, 'metadata.pkl')
         write_pickle(centralized_metadata, centralized_metadata_filepath)
@@ -812,28 +818,61 @@ def display_model_information(model_metadata_filepath):
     print(f"{'=' * 60}")
 
     print("\nArchitecture")
-    print(f"  Layers:              {metadata['num_layers']}")
-    print(f"  Trainable layers:    {metadata['num_trainable_layers']}")
-    print(f"  Trainable parameters:{metadata['trainable_parameters']:,}")
+    print(f"  Layers:               {metadata['num_layers']}")
+    print(f"  Trainable layers:     {metadata['num_trainable_layers']}")
+    print(f"  Trainable parameters: {metadata['trainable_parameters']:,}")
     print("  Layer sequence:")
     for layer in metadata['layer_sequence']:
         print(f"    {layer}")
 
+    for dataset_type in ('training_dataset_info', 'testing_dataset_info'):
+        dataset = metadata.get(dataset_type)
+        if dataset is None:
+            continue
+
+        print(f"\n{dataset_type.replace('_', ' ').title()}")
+        print(f"  Name:                 {dataset['name']}")
+        print(f"  Input labels:         {dataset['input_labels']}")
+        print(f"  Output labels:        {dataset['output_labels']}")
+        print(f"  Window length:        {dataset['window_length']}")
+        print(f"  Stride:               {dataset['stride']}")
+        print(f"  Num timesteps:        {dataset['num_timesteps']:,}")
+        print(f"  Num samples:          {dataset['num_samples']:,}")
+        print(f"  Size:                 {dataset['size_MB']:.2f} MB")
+        print(f"  Num chunks:           {dataset['num_chunks']}")
+        print(f"  Train/Val/Test split: {dataset['train_val_test_split']}")
+
+        print("  Normalization factors:")
+        for key, value in dataset['normalization_factors'].items():
+            print(f"    {key}: {value}")
+
+        print("  Splits:")
+        for split in ('train_split', 'val_split', 'test_split'):
+            info = dataset[split]
+            print(
+                f"    {split.replace('_split', '').title()}: "
+                f"{info['num_samples']:,} samples, "
+                f"{info['num_timesteps']:,} timesteps, "
+                f"{info['size_MB']:.2f} MB"
+            )
+
     print("\nTraining")
-    print(f"  Epochs:              {metadata['epochs_completed']} / {metadata['epochs_requested']}")
-    print(f"  Batch size:          {metadata['batch_size']}")
-    print(f"  Training time:       {metadata['train_time_seconds']:.2f} s")
+    print(f"  Epochs:               {metadata['epochs_completed']} / {metadata['epochs_requested']}")
+    print(f"  Batch size:           {metadata['batch_size']}")
+    print(f"  Training time:        {metadata['train_time_seconds']:.2f} s")
     print(f"  Peak RAM:             {metadata['train_peak_RAM_MB']:.2f} MB")
     print(f"  Model size:           {metadata['size_MB']:.2f} MB")
 
     print("\nLoss")
     print(f"  Final train loss:     {metadata['train_loss_history'][-1]:.6f}")
-    print(f"  Final validation loss: {metadata['val_loss_history'][-1]:.6f}")
+    print(f"  Final validation loss:{metadata['val_loss_history'][-1]:.6f}")
 
     print("\nPerformance")
     performance = metadata.get('performance', {})
-    for key in ('mse_norm', 'rmse_norm', 'mse', 'rmse', 'mae', 'eacc',
-                'inference_time_seconds', 'inference_peak_RAM_MB'):
+    for key in (
+        'mse_norm', 'rmse_norm', 'mse', 'rmse', 'mae', 'eacc',
+        'inference_time_seconds', 'inference_peak_RAM_MB'
+    ):
         if key in performance:
             print(f"  {key}: {performance[key]}")
 
@@ -857,9 +896,10 @@ if __name__ == '__main__':
     
     # Script Tasks
     generate_house_data = False # Done
-    generate_centralized_data = False # Done
+    generate_centralized_data = True
+    # Done
     train_single_house_model = False # Done
-    train_centralized_model = False # Done
+    train_centralized_model = True # Done
     test_single_house_model = False # Done
     test_centralized_model = False # Done
 
