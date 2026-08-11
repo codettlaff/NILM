@@ -896,11 +896,11 @@ if __name__ == '__main__':
     
     # Script Tasks
     generate_house_data = False # Done
-    generate_centralized_data = False # Done
+    generate_centralized_data = True # Done
     train_single_house_model = False # Done
-    train_centralized_model = True # Done
+    train_centralized_model = False # Done
     test_single_house_model = False # Done
-    test_centralized_model = False # Done
+    test_centralized_model = True # Done
 
     # Pre-Process Data
     ukdale_folderpath = os.path.join(data_dir, 'ukdale')
@@ -917,6 +917,7 @@ if __name__ == '__main__':
     centralized_data_folderpath = os.path.join(data_dir, 'ukdale_centralized')
     os.makedirs(centralized_data_folderpath, exist_ok=True)
     house_name_list = [f for f in os.listdir(ukdale_processed_folderpath) if os.path.isdir(os.path.join(ukdale_processed_folderpath, f))]
+    house_name_list.remove('ukdale3') # Contains NaNs
     house_folderpath_list = [os.path.join(ukdale_processed_folderpath, f) for f in house_name_list]
     if generate_centralized_data:
         centralize_data(house_folderpath_list, centralized_data_folderpath)
