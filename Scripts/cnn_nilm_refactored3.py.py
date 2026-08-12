@@ -480,7 +480,7 @@ def train_model(
     
     process = psutil.Process(os.getpid())
     peak_ram = process.memory_info().rss
-    train_loss_history, val_loss_history = [],[]
+    train_loss_history_epochs, val_loss_history_epochs, train_loss_history_batches, val_loss_history_batches = [],[],[],[]
     train_start_time = time.perf_counter()
     
     for epoch in tqdm(range(epochs), desc='Epochs'):
@@ -495,9 +495,10 @@ def train_model(
             loss = model.train_on_batch([X_p, X_time], Y_p)
             peak_ram = max(peak_ram, process.memory_info().rss)
             train_loss += loss
+            train_loss_history_batches.append(loss)
             n_train_batches += 1
         train_loss /= n_train_batches
-        train_loss_history.append(train_loss)
+        train_loss_history_epochs.append(train_loss)
         
         # Validation
         val_loss = 0.0
@@ -508,9 +509,10 @@ def train_model(
             loss = model.test_on_batch([X_p, X_time], Y_p)
             peak_ram = max(peak_ram, process.memory_info().rss)
             val_loss += loss
+            val_loss_history_batches.append(loss)
             num_val_batches += 1
         val_loss /= num_val_batches
-        val_loss_history.append(val_loss)
+        val_loss_history_epochs.append(val_loss)
         best_val_loss = min(best_val_loss, val_loss)
         epochs_completed += 1 
         
@@ -537,8 +539,8 @@ def train_model(
         epochs,
         epochs_completed,
         batch_size,
-        train_loss_history,
-        val_loss_history,
+        train_loss_history_batches,
+        val_loss_history_batches,
         peak_ram / 1024**2,
         model_size_MB)
     metadata_filepath = os.path.join(save_folderpath, 'metadata.pkl')
@@ -891,15 +893,15 @@ if __name__ == '__main__':
     window_length = 300 # 5 Minutes
     stride = 1 
     num_chunks = 100
-    epochs = 1 #20 
+    epochs = 20 #20 
     batch_size = 32
     
     # Script Tasks
     generate_house_data = False # Done
-    generate_centralized_data = True # Done
-    train_single_house_model = False # Done
-    train_centralized_model = False # Done
-    test_single_house_model = False # Done
+    generate_centralized_data = False # Done
+    train_single_house_model = True # Done
+    train_centralized_model = True # Done
+    test_single_house_model = True # Done
     test_centralized_model = True # Done
 
     # Pre-Process Data
