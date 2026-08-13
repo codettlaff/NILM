@@ -922,7 +922,8 @@ if __name__ == '__main__':
     test_single_house_model = False # Done
     test_centralized_model = False # Done
     display_results = False # Done
-    resave_models = True
+    resave_models = False # Create Json and Npy Files
+    resave_models1 = False # Reconstruct keras file from JSON and Npy Files
 
     # Pre-Process Data
     ukdale_folderpath = os.path.join(data_dir, 'ukdale')
@@ -992,3 +993,17 @@ if __name__ == '__main__':
             json_filepath = os.path.join(os.path.dirname(model_filepath), 'architecture.json')
             weights_filepath = os.path.join(os.path.dirname(model_filepath), 'weights.npy')
             resave_model(model_filepath, json_filepath, weights_filepath)
+            
+    if resave_models1:
+        
+        for model_name, directory_dict in single_house_models.items():
+            model_filepath = directory_dict['model']
+            json_filepath = os.path.join(os.path.dirname(model_filepath), 'architecture.json')
+            weights_filepath = os.path.join(os.path.dirname(model_filepath), 'weights.npy')
+            resave_model(model_filepath, json_filepath, weights_filepath, make_json=False)
+        
+        for model_name, directory_dict in centralized_models.items():
+            model_filepath = directory_dict['model']
+            json_filepath = os.path.join(os.path.dirname(model_filepath), 'architecture.json')
+            weights_filepath = os.path.join(os.path.dirname(model_filepath), 'weights.npy')
+            resave_model(model_filepath, json_filepath, weights_filepath, make_json=False)
