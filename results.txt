@@ -1,0 +1,903 @@
+============================================================
+MODEL: ukdale1_DWE
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d: Conv1D -> (None, 300, 32)
+    conv1d_1: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_2: Conv1D -> (None, 300, 128)
+    dense: Dense -> (None, 16)
+    global_average_pooling1d: GlobalAveragePooling1D -> (None, 128)
+    dense_1: Dense -> (None, 64)
+    concatenate: Concatenate -> (None, 192)
+    dense_2: Dense -> (None, 128)
+    dense_3: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 DWE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Testing Dataset Info
+  Name:                 DWE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        141.89 s
+  Peak RAM:             661.53 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.000024
+  Final validation loss:0.000029
+
+Performance
+  mse_norm: 0.0021718074567615986
+  rmse_norm: 0.046602655202150345
+  mse: 27094.24081838383
+  rmse: 164.60328313367214
+  mae: 19.739091223769428
+  eacc: 0.34081100440562606
+  inference_time_seconds: 3.120374849997461
+  inference_peak_RAM_MB: 832.9921875
+
+============================================================
+
+
+============================================================
+MODEL: ukdale1_FRE
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d_3: Conv1D -> (None, 300, 32)
+    conv1d_4: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_5: Conv1D -> (None, 300, 128)
+    dense_4: Dense -> (None, 16)
+    global_average_pooling1d_1: GlobalAveragePooling1D -> (None, 128)
+    dense_5: Dense -> (None, 64)
+    concatenate_1: Concatenate -> (None, 192)
+    dense_6: Dense -> (None, 128)
+    dense_7: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 FRE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Testing Dataset Info
+  Name:                 FRE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        141.35 s
+  Peak RAM:             700.08 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.000018
+  Final validation loss:0.000098
+
+Performance
+  mse_norm: 0.0021801465190947056
+  rmse_norm: 0.04669203981757164
+  mse: 26920.534434391106
+  rmse: 164.07478305453006
+  mae: 20.8466938414036
+  eacc: 0.3038225002866132
+  inference_time_seconds: 3.1283852281048894
+  inference_peak_RAM_MB: 841.9453125
+
+============================================================
+
+
+============================================================
+MODEL: ukdale1_KTE
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d_6: Conv1D -> (None, 300, 32)
+    conv1d_7: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_8: Conv1D -> (None, 300, 128)
+    dense_8: Dense -> (None, 16)
+    global_average_pooling1d_2: GlobalAveragePooling1D -> (None, 128)
+    dense_9: Dense -> (None, 64)
+    concatenate_2: Concatenate -> (None, 192)
+    dense_10: Dense -> (None, 128)
+    dense_11: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 KTE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Testing Dataset Info
+  Name:                 KTE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        142.44 s
+  Peak RAM:             719.12 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.000375
+  Final validation loss:0.000042
+
+Performance
+  mse_norm: 0.0021445536985993385
+  rmse_norm: 0.046309325844049454
+  mse: 26991.702274016207
+  rmse: 164.29151613524115
+  mae: 18.83812873644501
+  eacc: 0.37089873997333167
+  inference_time_seconds: 3.130926457233727
+  inference_peak_RAM_MB: 841.85546875
+
+============================================================
+
+
+============================================================
+MODEL: ukdale1_MIC
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d_9: Conv1D -> (None, 300, 32)
+    conv1d_10: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_11: Conv1D -> (None, 300, 128)
+    dense_12: Dense -> (None, 16)
+    global_average_pooling1d_3: GlobalAveragePooling1D -> (None, 128)
+    dense_13: Dense -> (None, 64)
+    concatenate_3: Concatenate -> (None, 192)
+    dense_14: Dense -> (None, 128)
+    dense_15: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 MIC
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Testing Dataset Info
+  Name:                 MIC
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        143.33 s
+  Peak RAM:             739.23 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.000014
+  Final validation loss:0.000060
+
+Performance
+  mse_norm: 0.002188356826081872
+  rmse_norm: 0.046779874712228775
+  mse: 27983.250025501893
+  rmse: 167.28194769759793
+  mae: 17.873396246913728
+  eacc: 0.403116081368745
+  inference_time_seconds: 3.104121720418334
+  inference_peak_RAM_MB: 846.5703125
+
+============================================================
+
+
+============================================================
+MODEL: ukdale1_WME
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d_12: Conv1D -> (None, 300, 32)
+    conv1d_13: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_14: Conv1D -> (None, 300, 128)
+    dense_16: Dense -> (None, 16)
+    global_average_pooling1d_4: GlobalAveragePooling1D -> (None, 128)
+    dense_17: Dense -> (None, 64)
+    concatenate_4: Concatenate -> (None, 192)
+    dense_18: Dense -> (None, 128)
+    dense_19: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 WME
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Testing Dataset Info
+  Name:                 WME
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        158,149
+  Num samples:          128,249
+  Size:                 150.19 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.7, 0.15, 0.15]
+  Normalization factors:
+    P_agg_min: 129.0
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3913.    0.    0.    0. 3386.]
+  Splits:
+    Train: 93,451 samples, 114,381 timesteps, 109.44 MB
+    Val: 17,249 samples, 21,734 timesteps, 20.20 MB
+    Test: 17,549 samples, 22,034 timesteps, 20.55 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        142.87 s
+  Peak RAM:             772.55 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.000009
+  Final validation loss:0.000061
+
+Performance
+  mse_norm: 0.0021346560679376125
+  rmse_norm: 0.046202339231967926
+  mse: 27166.501510346505
+  rmse: 164.82263652285903
+  mae: 19.8741373888356
+  eacc: 0.3363011237378858
+  inference_time_seconds: 3.0868395939469337
+  inference_peak_RAM_MB: 848.46875
+
+============================================================
+
+
+============================================================
+MODEL: ukdale_centralized_DWE
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d_15: Conv1D -> (None, 300, 32)
+    conv1d_16: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_17: Conv1D -> (None, 300, 128)
+    dense_20: Dense -> (None, 16)
+    global_average_pooling1d_5: GlobalAveragePooling1D -> (None, 128)
+    dense_21: Dense -> (None, 64)
+    concatenate_5: Concatenate -> (None, 192)
+    dense_22: Dense -> (None, 128)
+    dense_23: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 ukdale_centralized_DWE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Testing Dataset Info
+  Name:                 ukdale_centralized_DWE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        564.32 s
+  Peak RAM:             1216.69 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.000288
+  Final validation loss:0.000024
+
+Performance
+  mse_norm: 0.003071662737056613
+  rmse_norm: 0.0554225817322731
+  mse: 40163.76024738234
+  rmse: 200.40898245184107
+  mae: 48.04761649805777
+  eacc: 0.16991402466720917
+  inference_time_seconds: 12.017096762545407
+  inference_peak_RAM_MB: 914.921875
+
+============================================================
+
+
+============================================================
+MODEL: ukdale_centralized_FRE
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d_18: Conv1D -> (None, 300, 32)
+    conv1d_19: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_20: Conv1D -> (None, 300, 128)
+    dense_24: Dense -> (None, 16)
+    global_average_pooling1d_6: GlobalAveragePooling1D -> (None, 128)
+    dense_25: Dense -> (None, 64)
+    concatenate_6: Concatenate -> (None, 192)
+    dense_26: Dense -> (None, 128)
+    dense_27: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 ukdale_centralized_FRE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Testing Dataset Info
+  Name:                 ukdale_centralized_FRE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        570.23 s
+  Peak RAM:             1200.16 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.000410
+  Final validation loss:0.000039
+
+Performance
+  mse_norm: 0.003112832549959421
+  rmse_norm: 0.05579276382923126
+  mse: 40500.37583334187
+  rmse: 201.24705173825993
+  mae: 51.03577333685495
+  eacc: 0.11828967231082166
+  inference_time_seconds: 12.038834502920508
+  inference_peak_RAM_MB: 921.0625
+
+============================================================
+
+
+============================================================
+MODEL: ukdale_centralized_KTE
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d_21: Conv1D -> (None, 300, 32)
+    conv1d_22: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_23: Conv1D -> (None, 300, 128)
+    dense_28: Dense -> (None, 16)
+    global_average_pooling1d_7: GlobalAveragePooling1D -> (None, 128)
+    dense_29: Dense -> (None, 64)
+    concatenate_7: Concatenate -> (None, 192)
+    dense_30: Dense -> (None, 128)
+    dense_31: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 ukdale_centralized_KTE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Testing Dataset Info
+  Name:                 ukdale_centralized_KTE
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        567.00 s
+  Peak RAM:             1248.49 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.003719
+  Final validation loss:0.000016
+
+Performance
+  mse_norm: 0.0030839480459690094
+  rmse_norm: 0.05553330481052399
+  mse: 40484.84576202913
+  rmse: 201.2084634453261
+  mae: 50.43411653107432
+  eacc: 0.12868408753560645
+  inference_time_seconds: 11.998478948138654
+  inference_peak_RAM_MB: 936.05078125
+
+============================================================
+
+
+============================================================
+MODEL: ukdale_centralized_MIC
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d_24: Conv1D -> (None, 300, 32)
+    conv1d_25: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_26: Conv1D -> (None, 300, 128)
+    dense_32: Dense -> (None, 16)
+    global_average_pooling1d_8: GlobalAveragePooling1D -> (None, 128)
+    dense_33: Dense -> (None, 64)
+    concatenate_8: Concatenate -> (None, 192)
+    dense_34: Dense -> (None, 128)
+    dense_35: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 ukdale_centralized_MIC
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Testing Dataset Info
+  Name:                 ukdale_centralized_MIC
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        565.39 s
+  Peak RAM:             1291.71 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.000319
+  Final validation loss:0.000022
+
+Performance
+  mse_norm: 0.0030891019850969315
+  rmse_norm: 0.055579692125320435
+  mse: 40523.155789725606
+  rmse: 201.30364077613103
+  mae: 46.618870272783184
+  eacc: 0.1945975009840425
+  inference_time_seconds: 12.070093690417707
+  inference_peak_RAM_MB: 927.3515625
+
+============================================================
+
+
+============================================================
+MODEL: ukdale_centralized_WME
+============================================================
+
+Architecture
+  Layers:               12
+  Trainable layers:     10
+  Trainable parameters: 69,361
+  Layer sequence:
+    power_input: InputLayer -> (None, 300, 1)
+    conv1d_27: Conv1D -> (None, 300, 32)
+    conv1d_28: Conv1D -> (None, 300, 64)
+    time_input: InputLayer -> (None, 2)
+    conv1d_29: Conv1D -> (None, 300, 128)
+    dense_36: Dense -> (None, 16)
+    global_average_pooling1d_9: GlobalAveragePooling1D -> (None, 128)
+    dense_37: Dense -> (None, 64)
+    concatenate_9: Concatenate -> (None, 192)
+    dense_38: Dense -> (None, 128)
+    dense_39: Dense -> (None, 64)
+    power_output: Dense -> (None, 1)
+
+Training Dataset Info
+  Name:                 ukdale_centralized_WME
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Testing Dataset Info
+  Name:                 ukdale_centralized_WME
+  Input labels:         ['sin_hour', 'cos_hour', 'P_agg']
+  Output labels:        ['P_KTE' 'P_MIC' 'P_DWE' 'P_FRE' 'P_WME']
+  Window length:        300
+  Stride:               1
+  Num timesteps:        632,596
+  Num samples:          512,996
+  Size:                 600.78 MB
+  Num chunks:           100
+  Train/Val/Test split: [0.73, 0.13, 0.14]
+  Normalization factors:
+    P_agg_min: 94.71667
+    P_agg_max: 8276.0
+    P_apps_min: [0. 0. 0. 0. 0.]
+    P_apps_max: [3961. 2998. 3964. 1836. 3695.]
+  Splits:
+    Train: 373,804 samples, 457,524 timesteps, 437.77 MB
+    Val: 68,996 samples, 86,936 timesteps, 80.80 MB
+    Test: 70,196 samples, 88,136 timesteps, 82.21 MB
+
+Training
+  Epochs:               5 / 20
+  Batch size:           32
+  Training time:        563.17 s
+  Peak RAM:             1335.41 MB
+  Model size:           0.85 MB
+
+Loss
+  Final train loss:     0.000477
+  Final validation loss:0.000036
+
+Performance
+  mse_norm: 0.0030982207972556353
+  rmse_norm: 0.05566166341304779
+  mse: 40458.44567503987
+  rmse: 201.1428489284167
+  mae: 50.68400393733841
+  eacc: 0.12436695285816624
+  inference_time_seconds: 12.769496973603964
+  inference_peak_RAM_MB: 940.70703125
+
+============================================================
+
+
+============================================================
+Individual House Models Summary
+============================================================
+
+Appliance     RMSE (W)     MAE (W)     EACC 
+DWE           164.6        19.74       0.341
+FRE           164.1        20.85       0.304
+KTE           164.3        18.84       0.371
+MIC           167.3        17.87       0.403
+WME           164.8        19.87       0.336
+
+RMSE is much larger than MAE: Suggests that model usually makes relatively small errors but occasionally
+makes very large errors. Concerned that model is always guessing OFF, or something similar.
+
+Training ran for only 5/20 epochs.
+Training and validation losses are relatively low.
+
+Centralized model performs substantially worse: This is to be expected.
+
+To Do:
+Look at loss history.
+Plot prediction versus target time-series.
+
