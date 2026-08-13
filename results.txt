@@ -901,3 +901,9 @@ To Do:
 Look at loss history.
 Plot prediction versus target time-series.
 
+MSE is likely rewarding the model for predicting the appliance's many low/off-power samples. 
+
+Kamiak Tensorflow version: 2.15.0
+Lab PC Tensorflow version: 2.15.0 plus tensorflow-intel==2.15.0
+On Windows, tensorflow==2.15.0 explicitly depends on tensorflow-intel.
+Cannot remove tensorflow-intel while keeping normal Windows TensorFlow 2.15 package.

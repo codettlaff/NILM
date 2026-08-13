@@ -802,15 +802,27 @@ def train_all_appliance_models(data_folderpath, save_folderpath, epochs, batch_s
         os.makedirs(model_save_folderpath, exist_ok=True)
         train_model(appliance_dict, epochs, batch_size, model_save_folderpath)
 
-def test_all_appliance_models(data_folderpath, models_folderpath, batch_size):
+def test_all_appliance_models(data_folderpath, models_folderpath, batch_size, results_folderpath=None):
     data_directory_dict = create_directory_dict(data_folderpath)
     models_directory_dict = create_directory_dict(models_folderpath)
     model_names = models_directory_dict.keys()
     for model_name in tqdm(model_names, desc='Appliance Models'):
+        model_results_folderpath = os.path.join(results_folderpath, model_name)
+        os.makedirs(model_results_folderpath, exist_ok=True)
         appliance_model_directory_dict = models_directory_dict[model_name]
         appliance_name = model_name.split('_')[-1]
         appliance_data_directory_dict = data_directory_dict[appliance_name]
-        test_model(appliance_data_directory_dict, appliance_model_directory_dict)
+        test_model(appliance_data_directory_dict, appliance_model_directory_dict, model_results_folderpath)
+        
+def resave_model(model_keras_filepath, architecture_json_filepath, weights_filepath, make_json=True):
+    if not make_json:
+        model = load_model(model_keras_filepath)
+        with open(architecture_json_filepath, 'w') as f: f.write(model.to_json())
+        model.save_weights(weights_filepath)
+    else:
+        with open(architecture_json_filepath, 'r') as f: model = tf.keras.models.model_from_json(f.read())
+        model.load_weights(weights_filepath)
+        model.save(model_keras_filepath)
         
 def display_model_information(model_metadata_filepath):
     metadata = read_pickle(model_metadata_filepath)
@@ -884,7 +896,11 @@ if __name__ == '__main__':
     
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     data_dir = os.path.join(base_dir, 'data')
+    
     models_dir = os.path.join(base_dir, 'models')
+    os.makedirs(models_dir, exist_ok=True)
+    
+    results_dir = os.path.join(base_dir, 'results')
     os.makedirs(models_dir, exist_ok=True)
     
     # Settings
@@ -899,10 +915,12 @@ if __name__ == '__main__':
     # Script Tasks
     generate_house_data = False # Done
     generate_centralized_data = False # Done
-    train_single_house_model = True # Done
-    train_centralized_model = True # Done
-    test_single_house_model = True # Done
-    test_centralized_model = True # Done
+    train_single_house_model = False # Done
+    train_centralized_model = False # Done
+    test_single_house_model = False # Done
+    test_centralized_model = False # Done
+    display_results = False # Done
+    resave_models = True
 
     # Pre-Process Data
     ukdale_folderpath = os.path.join(data_dir, 'ukdale')
@@ -939,20 +957,36 @@ if __name__ == '__main__':
         
     # Test single house, one model per appliance
     if test_single_house_model:
-        test_all_appliance_models(house1_data_folderpath, house1_model_folderpath, batch_size)
+        test_all_appliance_models(house1_data_folderpath, house1_model_folderpath, batch_size, results_dir)
         
     # Test centralized model
     if test_centralized_model:
-        test_all_appliance_models(centralized_data_folderpath, centralized_model_folderpath, batch_size)
+        test_all_appliance_models(centralized_data_folderpath, centralized_model_folderpath, batch_size, results_dir)
         
     # Compare Results
     single_house_models = create_directory_dict(house1_model_folderpath)
     centralized_models = create_directory_dict(centralized_model_folderpath)
     
-    for model_name, directory_dict in single_house_models.items():
-        metadata_filepath = directory_dict['metadata']
-        display_model_information(metadata_filepath)
-    
-    for model_name, directory_dict in centralized_models.items():
-        metadata_filepath = directory_dict['metadata']
-        display_model_information(metadata_filepath)
+    if display_results:
+        
+        for model_name, directory_dict in single_house_models.items():
+            metadata_filepath = directory_dict['metadata']
+            display_model_information(metadata_filepath)
+        
+        for model_name, directory_dict in centralized_models.items():
+            metadata_filepath = directory_dict['metadata']
+            display_model_information(metadata_filepath)
+            
+    if resave_models:
+        
+        for model_name, directory_dict in single_house_models.items():
+            model_filepath = directory_dict['model']
+            json_filepath = os.path.join(os.path.dirname(model_filepath), 'architecture.json')
+            weights_filepath = os.path.join(os.path.dirname(model_filepath), 'weights.npy')
+            resave_model(model_filepath, json_filepath, weights_filepath)
+        
+        for model_name, directory_dict in centralized_models.items():
+            model_filepath = directory_dict['model']
+            json_filepath = os.path.join(os.path.dirname(model_filepath), 'architecture.json')
+            weights_filepath = os.path.join(os.path.dirname(model_filepath), 'weights.npy')
+            resave_model(model_filepath, json_filepath, weights_filepath)
