@@ -818,11 +818,12 @@ def resave_model(model_keras_filepath, architecture_json_filepath, weights_filep
     if make_json:
         model = load_model(model_keras_filepath)
         with open(architecture_json_filepath, 'w') as f: f.write(model.to_json())
-        np.save(weights_filepath, model.get_weights(), allow_pickle=True)
+        weights = np.array(model.get_weights(), dtype=object)
+        np.save(weights_filepath, weights, allow_pickle=True)
     else:
         with open(architecture_json_filepath, 'r') as f: model = tf.keras.models.model_from_json(f.read())
         weights = np.load(weights_filepath, allow_pickle=True)
-        model.set_weights(weights)
+        model.set_weights(weights.tolist())
         model.save(model_keras_filepath)
         
 def display_model_information(model_metadata_filepath):
