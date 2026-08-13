@@ -460,7 +460,10 @@ def train_model(
     dataset_directory_dict: dict,
     epochs: int,
     batch_size: int,
-    save_folderpath: str):
+    save_folderpath: str,
+    weighted_mse=False,
+    alpha=9.0,
+    threshold=0.1):
     
     name = os.path.basename(save_folderpath)
     train_env = get_environment_info()
@@ -485,6 +488,8 @@ def train_model(
     
     for epoch in tqdm(range(epochs), desc='Epochs'):
         
+        weights = 1.0
+        
         # Training
         train_loss = 0.0
         perm = np.random.permutation(n_samples_train)
@@ -492,7 +497,8 @@ def train_model(
         for i in tqdm(range(0, n_samples_train, batch_size), desc='Training', leave=False):
             batch_idx = perm[i: i + batch_size]
             (X_p, X_time), Y_p = generate_batch(train_data, batch_idx)
-            loss = model.train_on_batch([X_p, X_time], Y_p)
+            if weighted_mse == True: weights = 1.0 + alpha * (Y_p > threshold)
+            loss = model.train_on_batch([X_p, X_time], Y_p, sample_weight=weights)
             peak_ram = max(peak_ram, process.memory_info().rss)
             train_loss += loss
             train_loss_history_batches.append(loss)
@@ -506,7 +512,8 @@ def train_model(
         for i in tqdm(range(0, n_samples_val, batch_size), desc='Validation', leave=False):
             batch_idx = np.arange(i, min(i + batch_size, n_samples_val))
             (X_p, X_time), Y_p = generate_batch(val_data, batch_idx)
-            loss = model.test_on_batch([X_p, X_time], Y_p)
+            if weighted_mse == True: weights = 1.0 + alpha * (Y_p > threshold)
+            loss = model.test_on_batch([X_p, X_time], Y_p, sample_weight=weights)
             peak_ram = max(peak_ram, process.memory_info().rss)
             val_loss += loss
             val_loss_history_batches.append(loss)
@@ -1007,3 +1014,12 @@ if __name__ == '__main__':
             json_filepath = os.path.join(os.path.dirname(model_filepath), 'architecture.json')
             weights_filepath = os.path.join(os.path.dirname(model_filepath), 'weights.npy')
             resave_model(model_filepath, json_filepath, weights_filepath, make_json=False)
+            
+    # Train using weighted mse
+    data_folderpath = os.path.join(data_dir, 'ukdale_processed', 'ukdale1', 'DWE')
+    data_directory_dict = create_directory_dict(data_folderpath)
+    save_folderpath = os.path.join(models_dir, 'ukdale1_DWE_weighted_mse')
+    epochs = 5
+    train_model(data_directory_dict, epochs, batch_size, save_folderpath, weighted_mse=True)
+    
+    print('')
