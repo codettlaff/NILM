@@ -815,7 +815,7 @@ def test_all_appliance_models(data_folderpath, models_folderpath, batch_size, re
         test_model(appliance_data_directory_dict, appliance_model_directory_dict, model_results_folderpath)
         
 def resave_model(model_keras_filepath, architecture_json_filepath, weights_filepath, make_json=True):
-    if not make_json:
+    if make_json:
         model = load_model(model_keras_filepath)
         with open(architecture_json_filepath, 'w') as f: f.write(model.to_json())
         model.save_weights(weights_filepath)
