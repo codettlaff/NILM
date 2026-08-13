@@ -6,6 +6,7 @@ Created on Thu Aug 13 10:13:38 2026
 """
 import os
 import pickle
+import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 
@@ -90,17 +91,34 @@ def plot_loss_history(metadata_filepath):
     plt.grid()
     plt.show()
     
+def plot_prediction_time_series(results_npz_filepath, target_appliances):
+    results = np.load(results_npz_filepath)
+    y_true = results['y_true']
+    y_pred = results['y_pred']
+
+    for i, appliance in enumerate(target_appliances):
+        plt.figure()
+        plt.plot(y_true[:, i], label='True')
+        plt.plot(y_pred[:, i], label='Predicted')
+        plt.xlabel('Timestep')
+        plt.ylabel('Power (W)')
+        plt.title(appliance)
+        plt.legend()
+        plt.show()
+    
 if __name__ == '__main__':
     
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     data_dir = os.path.join(base_dir, 'data')
     models_dir = os.path.join(base_dir, 'models')
+    results_dir = os.path.join(base_dir, 'results')
     
     ukdale1_DWE_model = os.path.join(models_dir, 'ukdale1', 'ukdale1_DWE', 'model.keras')
     ukdale1_DWE_metadata = os.path.join(models_dir, 'ukdale1', 'ukdale1_DWE', 'metadata.pkl')
     
-    # Debug Issue loading models that were trained on kamiak
-    model = tf.keras.models.load_model(ukdale1_DWE_model, compile=False)
+    # model = tf.keras.models.load_model(ukdale1_DWE_model, compile=False)
+    results_filepath = os.path.join(results_dir, 'ukdale1_DWE.npz')
+    plot_prediction_time_series(results_filepath, target_appliances=['DWE'])
     
     plot_loss_history(ukdale1_DWE_metadata)
     
